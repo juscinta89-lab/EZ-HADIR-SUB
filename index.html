@@ -25,18 +25,116 @@
    ══════════════════════════════════════════════════════════════ */
 const CONFIG = {
   FIREBASE: {
-    apiKey:            "AIzaSyBQyQyzrrYua5VTEIWrtwCOZz7UGQz5qVI",
-    authDomain:        "ez-hadir.firebaseapp.com",
-    projectId:         "ez-hadir",
-    storageBucket:     "ez-hadir.firebasestorage.app",
-    messagingSenderId: "198348021865",
-    appId:             "1:198348021865:web:e5a167e59188979c86c2f8"
-  },
+  apiKey: "AIzaSyDUYbamgSKQo0TPDQnFq7r97mFVKL2tm4s",
+  authDomain: "ez-hadir-subscribe.firebaseapp.com",
+  projectId: "ez-hadir-subscribe",
+  storageBucket: "ez-hadir-subscribe.firebasestorage.app",
+  messagingSenderId: "127845537280",
+  appId: "1:127845537280:web:96efbe9782dcd3cb0faae5",
+  measurementId: "G-2LLHY0CCQG"
+};
 
   /* Emel PEMILIK produk (anda). Boleh cipta sekolah baharu,
      tetapkan langganan, dan lantik admin pertama setiap sekolah.
      Mesti sama dengan senarai dalam firestore.rules. */
-  PEMILIK: ["alimin@moe-dl.edu.my"],
+  PEMILIK: ["rules_version = '2';
+
+/* ══════════════════════════════════════════════════════════════
+   EZ-HADIR — Firestore Security Rules (berbilang sekolah)
+
+   SEBELUM PUBLISH: tukar emel dalam fungsi pemilik() kepada emel
+   anda sendiri. Ia mesti sama dengan CONFIG.PEMILIK dalam index.html.
+
+   Peranan:
+   • Pemilik produk  → semua sekolah, cipta dan tamatkan langganan
+   • Admin sekolah   → data sekolah sendiri sahaja, baca dan tulis
+   • Guru            → data sekolah sendiri sahaja, baca sahaja
+   • Orang lain      → tiada akses
+
+   Sekolah A tidak boleh membaca data sekolah B kerana setiap
+   pemeriksaan bergantung pada keahlian di bawah sekolah itu sendiri.
+   ══════════════════════════════════════════════════════════════ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function masuk() {
+      return request.auth != null
+          && request.auth.token.email != null
+          && request.auth.token.email_verified == true;
+    }
+    function emel() { return request.auth.token.email.lower(); }
+
+    // GANTI dengan emel anda
+    function pemilik() {
+      return masuk() && emel() in [
+        'g-45275576@moe-dl.edu.my'
+      ];
+    }
+
+    function keahlian(sid) {
+      return get(/databases/$(database)/documents/sekolah/$(sid)/pengguna/$(emel()));
+    }
+    function ahli(sid) {
+      return masuk() && exists(/databases/$(database)/documents/sekolah/$(sid)/pengguna/$(emel()));
+    }
+    function adminSekolah(sid) {
+      return ahli(sid) && keahlian(sid).data.peranan == 'admin';
+    }
+
+    // Langganan: sekolah mesti aktif dan belum tamat
+    function sekolahHidup(sid) {
+      let s = get(/databases/$(database)/documents/sekolah/$(sid)).data;
+      return s.aktif == true
+          && (!('tamat' in s) || s.tamat == null || request.time < s.tamat);
+    }
+
+    match /sekolah/{sid} {
+      // maklumat sekolah boleh dibaca ahli walaupun langganan tamat,
+      // supaya app boleh papar sebab akses disekat
+      allow read:   if ahli(sid) || pemilik();
+      allow create, delete: if pemilik();
+      // admin hanya boleh kemas kini kiraan kelas, bukan status langganan
+      allow update: if pemilik()
+                    || (adminSekolah(sid)
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['bilKelas']));
+
+      match /pengguna/{emelPengguna} {
+        allow read:   if ahli(sid) || pemilik();
+        allow create, update: if (adminSekolah(sid) || pemilik())
+                    && request.resource.data.peranan in ['admin','guru']
+                    && request.resource.data.emel == emelPengguna;
+        allow delete: if adminSekolah(sid) || pemilik();
+      }
+
+      match /kelas/{kelasId} {
+        allow read:  if ahli(sid) && (sekolahHidup(sid) || pemilik());
+        allow write: if (adminSekolah(sid) || pemilik())
+                     && sekolahHidup(sid)
+                     && request.resource.data.nama is string
+                     && request.resource.data.murid is list
+                     && request.resource.data.murid.size() <= 300;
+        allow delete: if adminSekolah(sid) || pemilik();
+      }
+
+      match /tetapan/{docId} {
+        allow read:  if ahli(sid) && (sekolahHidup(sid) || pemilik());
+        allow write: if (adminSekolah(sid) || pemilik()) && sekolahHidup(sid);
+      }
+    }
+
+    // Membolehkan app mencari sekolah pengguna sendiri.
+    // Setiap orang hanya nampak baris keahlian miliknya.
+    match /{path=**}/pengguna/{emelPengguna} {
+      allow read: if masuk() && resource.data.emel == emel();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}"],
 
   /* Nama produk untuk paparan dan invois */
   JENAMA: "EZ-HADIR"
