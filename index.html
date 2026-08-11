@@ -310,7 +310,24 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
 .g-btn:active{transform:translateY(1px)}
 .g-btn[disabled]{opacity:.6}
 .gate-err{color:#FFB1A3;font-size:13px;min-height:19px;margin-top:15px;line-height:1.5}
-.gate-note{color:#7A91AC;font-size:11.5px;margin-top:22px;line-height:1.55}
+.gate-note{color:#7A91AC;font-size:11.5px;margin-top:18px;line-height:1.55}
+.g-alt{
+  width:100%;height:46px;margin-top:10px;background:transparent;color:#A6BCD6;
+  border:1.5px solid rgba(255,255,255,.22);border-radius:13px;font-weight:600;font-size:14px
+}
+.g-alt[hidden]{display:none}
+.diag{margin-top:14px;text-align:left}
+.diag summary{
+  list-style:none;color:#7A91AC;font-size:11.5px;text-align:center;padding:8px;cursor:pointer;
+  text-decoration:underline
+}
+.diag summary::-webkit-details-marker{display:none}
+.diag pre{
+  margin:8px 0 0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+  border-radius:12px;padding:11px 12px;color:#C6D6E8;
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:1.6;
+  white-space:pre-wrap;word-break:break-word;max-height:230px;overflow:auto
+}
 
 /* ── toast ─────────────────────────────────────────────────── */
 .toast{
@@ -387,7 +404,12 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
       Log masuk dengan Google
     </button>
     <p class="gate-err" id="gateErr"></p>
+    <button class="g-alt" id="btnRedirect" hidden>Cuba cara lain (halaman Google)</button>
     <p class="gate-note" id="gateNote"></p>
+    <details class="diag" id="diag">
+      <summary>Kenapa saya tak boleh masuk?</summary>
+      <pre id="diagIsi">—</pre>
+    </details>
   </div>
 </div>
 
@@ -1091,7 +1113,34 @@ const $=id=>document.getElementById(id);
 const gate=$('gate'), err=$('gateErr'), note=$('gateNote'), btn=$('btnGoogle');
 const CONFIG=window.CONFIG;
 
-const gagal=m=>{ err.textContent=m; btn.disabled=false; btn.textContent='Log masuk dengan Google'; };
+let ralatAkhir='';
+const gagal=m=>{
+  if(m) ralatAkhir=m;
+  err.textContent=m; btn.disabled=false; btn.textContent='Log masuk dengan Google';
+  lukisDiag();
+};
+function lukisDiag(nota){
+  const d=$('diagIsi'); if(!d) return;
+  const c=window.CONFIG||{};
+  d.textContent=[
+    'Alamat      : '+location.protocol+'//'+location.host+location.pathname,
+    'Protokol    : '+location.protocol+(location.protocol==='file:'?'  ← MASALAH':'  ok'),
+    'Pustaka     : '+(window.__fbSiap?'dimuatkan':'GAGAL dimuatkan'),
+    'authDomain  : '+(c.FIREBASE?.authDomain||'(kosong)'),
+    'projectId   : '+(c.FIREBASE?.projectId||'(kosong)'),
+    'Emel pemilik: '+((c.PEMILIK||[]).join(', ')||'(kosong)'),
+    'Akaun kini  : '+(window.__emelKini||'belum log masuk'),
+    'Ralat akhir : '+(ralatAkhir||'tiada'),
+    nota?('Nota        : '+nota):'',
+    '',
+    'Senarai semak:',
+    '1. Authentication → Sign-in method → Google diaktifkan',
+    '2. Authentication → Settings → Authorized domains',
+    '   mesti ada: '+location.hostname,
+    '3. Firestore → Rules sudah di-Publish',
+    '4. Buka melalui https, bukan fail tempatan'
+  ].filter(Boolean).join('\n');
+}
 
 /* Pendengar butang dipasang DAHULU supaya butang sentiasa bertindak,
    walaupun pustaka Firebase gagal dimuatkan. */
@@ -1143,7 +1192,9 @@ try{
   btn.textContent='Menyambung…'; btn.disabled=true;
   const [mApp,mAuth,mStore]=await muatFirebase();
   initializeApp=mApp.initializeApp; A=mAuth; F=mStore;
+  window.__fbSiap=true;
   btn.textContent='Log masuk dengan Google'; btn.disabled=false;
+  lukisDiag();
 }catch(e){
   status.gagal='Gagal memuatkan pustaka Firebase. Semak sambungan internet atau sekatan rangkaian sekolah. ('+(e?.message||e)+')';
   gagal(status.gagal);
@@ -1171,16 +1222,26 @@ let sekolahSaya=[], sidKini='', peranan='guru';
 
 if(!status.gagal) note.textContent='Akaun anda perlu didaftarkan oleh admin sekolah terlebih dahulu.';
 
-await A.getRedirectResult(auth).catch(e=>gagal(mesej(e)));
+$('btnRedirect').hidden=false;
+$('btnRedirect').addEventListener('click',async()=>{
+  err.textContent='Mengalihkan ke halaman Google…';
+  try{ await A.signInWithRedirect(auth,provider); }catch(e){ gagal(mesej(e)); }
+});
+
+try{
+  const hasil=await A.getRedirectResult(auth);
+  if(hasil?.user) lukisDiag('kembali dari halaman Google sebagai '+hasil.user.email);
+}catch(e){ gagal(mesej(e)); }
 
 /* ── kitaran log masuk ──────────────────────────────────────── */
 A.onAuthStateChanged(auth, async u=>{
   if(!u){
-    sekolahSaya=[]; sidKini=''; peranan='guru';
+    sekolahSaya=[]; sidKini=''; peranan='guru'; window.__emelKini=''; lukisDiag();
     window.EZ.tutup(); btn.disabled=false;
     window.EZ.tunjukPengguna(null); window.EZ.setSekolah(null); window.EZ.setPeranan('guru',0);
     return;
   }
+  window.__emelKini=u.email; lukisDiag();
   window.EZ.tunjukPengguna(u);
 
   try{
@@ -1208,8 +1269,10 @@ A.onAuthStateChanged(auth, async u=>{
       window.EZ.toast('Belum ada sekolah. Daftarkan sekolah pertama.');
       return;
     }
+    const dijangka=(window.CONFIG.PEMILIK||[]).join(', ');
     await A.signOut(auth);
-    gagal('Akaun '+u.email+' belum didaftarkan. Berikan emel ini kepada admin sekolah anda.');
+    gagal('Akaun '+u.email+' belum didaftarkan pada mana-mana sekolah.'+
+      (dijangka?(' Emel pemilik yang ditetapkan ialah '+dijangka+'.'):''));
     return;
   }
 
