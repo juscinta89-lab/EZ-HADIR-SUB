@@ -29,7 +29,7 @@ service cloud.firestore {
     // GANTI dengan emel anda
     function pemilik() {
       return masuk() && emel() in [
-        'juscinta89@gmail.com'
+        'alimin@moe-dl.edu.my'
       ];
     }
 
