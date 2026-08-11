@@ -24,14 +24,14 @@
    Data setiap sekolah terasing sepenuhnya dalam Firestore.
    ══════════════════════════════════════════════════════════════ */
 window.CONFIG = {
-  apiKey: "AIzaSyDUYbamgSKQo0TPDQnFq7r97mFVKL2tm4s",
-  authDomain: "ez-hadir-subscribe.firebaseapp.com",
-  projectId: "ez-hadir-subscribe",
-  storageBucket: "ez-hadir-subscribe.firebasestorage.app",
-  messagingSenderId: "127845537280",
-  appId: "1:127845537280:web:96efbe9782dcd3cb0faae5",
-  measurementId: "G-2LLHY0CCQG"
-};
+  FIREBASE: {
+    apiKey:            "AIzaSyDUYbamgSKQo0TPDQnFq7r97mFVKL2tm4s",
+    authDomain:        "ez-hadir-subscribe.firebaseapp.com",
+    projectId:         "ez-hadir-subscribe",
+    storageBucket:     "ez-hadir-subscribe.firebasestorage.app",
+    messagingSenderId: "127845537280",
+    appId:             "1:127845537280:web:96efbe9782dcd3cb0faae5"
+  },
 
   /* Emel PEMILIK produk (anda). Boleh cipta sekolah baharu,
      tetapkan langganan, dan lantik admin pertama setiap sekolah.
@@ -1111,7 +1111,11 @@ init();
    ══════════════════════════════════════════════════════════════ */
 const $=id=>document.getElementById(id);
 const gate=$('gate'), err=$('gateErr'), note=$('gateNote'), btn=$('btnGoogle');
-const CONFIG=window.CONFIG;
+/* Terima beberapa cara tetapan ditulis, supaya app tidak mati senyap
+   jika seseorang menampal firebaseConfig secara manual. */
+const CONFIG = window.CONFIG
+  || (window.firebaseConfig ? {FIREBASE:window.firebaseConfig, PEMILIK:window.PEMILIK||[], JENAMA:'EZ-HADIR'} : null);
+window.CONFIG = CONFIG || {};
 
 let ralatAkhir='';
 const gagal=m=>{
@@ -1122,10 +1126,12 @@ const gagal=m=>{
 function lukisDiag(nota){
   const d=$('diagIsi'); if(!d) return;
   const c=window.CONFIG||{};
+  const adaTetapan=!!(c.FIREBASE&&c.FIREBASE.apiKey);
   d.textContent=[
     'Alamat      : '+location.protocol+'//'+location.host+location.pathname,
     'Protokol    : '+location.protocol+(location.protocol==='file:'?'  ← MASALAH':'  ok'),
     'Pustaka     : '+(window.__fbSiap?'dimuatkan':'GAGAL dimuatkan'),
+    'Tetapan     : '+(adaTetapan?'dijumpai':'TIDAK DIJUMPAI dalam index.html'),
     'authDomain  : '+(c.FIREBASE?.authDomain||'(kosong)'),
     'projectId   : '+(c.FIREBASE?.projectId||'(kosong)'),
     'Emel pemilik: '+((c.PEMILIK||[]).join(', ')||'(kosong)'),
@@ -1201,17 +1207,26 @@ try{
   throw e;
 }
 
-const app=initializeApp(CONFIG.FIREBASE);
-const auth=A.getAuth(app);
-await A.setPersistence(auth,A.browserLocalPersistence).catch(()=>{});
+if(!CONFIG || !CONFIG.FIREBASE || !CONFIG.FIREBASE.apiKey){
+  const m1='Tetapan Firebase tidak dijumpai dalam index.html. '+
+    'Pastikan blok tetapan bermula dengan "window.CONFIG = {" dan mengandungi apiKey, '+
+    'authDomain serta projectId. Jangan ganti baris itu dengan "const firebaseConfig".';
+  gagal(m1); lukisDiag(); throw new Error(m1);
+}
 
-let fs;
+let app,auth,fs,provider;
 try{
-  fs=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})});
-}catch{ fs=F.getFirestore(app); }
-
-const provider=new A.GoogleAuthProvider();
-provider.setCustomParameters({prompt:'select_account'});
+  app=initializeApp(CONFIG.FIREBASE);
+  auth=A.getAuth(app);
+  await A.setPersistence(auth,A.browserLocalPersistence).catch(()=>{});
+  try{
+    fs=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})});
+  }catch{ fs=F.getFirestore(app); }
+  provider=new A.GoogleAuthProvider();
+  provider.setCustomParameters({prompt:'select_account'});
+}catch(e){
+  gagal('Gagal memulakan Firebase: '+(e?.message||e)); lukisDiag(); throw e;
+}
 
 const pemilikSenarai=(CONFIG.PEMILIK||[]).map(e=>e.toLowerCase()).filter(Boolean);
 const emelSaya=()=>(auth.currentUser?.email||'').toLowerCase();
