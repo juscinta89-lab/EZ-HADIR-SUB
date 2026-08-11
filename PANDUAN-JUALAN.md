@@ -46,7 +46,9 @@ Hantar kepada pelanggan:
 Admin sekolah itu kemudian uruskan sendiri:
 - Import fail Excel APDM → senarai kelas dan murid
 - Isi token bot Telegram dan Chat ID kumpulan sekolah
-- Tambah emel guru-guru lain dalam tab **Guru**
+- Tetapan → **Guru** → **Buat pautan jemputan** → kongsi ke kumpulan WhatsApp guru.
+  Guru buka pautan, log masuk Google, terus berdaftar. Pautan sah 30 hari
+  dan boleh dibatalkan bila-bila masa.
 
 Anda tidak perlu menyentuh data mereka lagi.
 

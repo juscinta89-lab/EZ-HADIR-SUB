@@ -47,6 +47,31 @@ service cloud.firestore {
           && (!('tamat' in s) || s.tamat == null || request.time < s.tamat);
     }
 
+    /* ── pautan jemputan ───────────────────────────────────── */
+    // Kod jemputan itu sendiri ialah rahsia. Sesiapa yang log masuk
+    // boleh membacanya JIKA tahu kodnya, tetapi tidak boleh menyenaraikan
+    // semua kod. Hanya admin sekolah boleh mencipta dan membatalkan.
+    function jemputan(kod) {
+      return get(/databases/$(database)/documents/jemputan/$(kod)).data;
+    }
+    function jemputanSah(kod, sid, peranan) {
+      return kod is string
+          && exists(/databases/$(database)/documents/jemputan/$(kod))
+          && jemputan(kod).sid == sid
+          && jemputan(kod).peranan == peranan
+          && jemputan(kod).aktif == true
+          && (jemputan(kod).tamat == null || request.time < jemputan(kod).tamat);
+    }
+
+    match /jemputan/{kod} {
+      allow get:    if masuk();
+      allow list:   if pemilik() || adminSekolah(resource.data.sid);
+      allow create: if masuk()
+                    && request.resource.data.peranan in ['admin','guru']
+                    && (pemilik() || adminSekolah(request.resource.data.sid));
+      allow update, delete: if pemilik() || adminSekolah(resource.data.sid);
+    }
+
     /* ── pendaftaran pengguna ──────────────────────────────── */
     match /pengguna/{emelPengguna} {
       // seorang boleh baca barisnya sendiri; admin boleh baca
@@ -57,10 +82,20 @@ service cloud.firestore {
                     || adminSekolah(resource.data.sid)
                   );
 
+      // Ditambah oleh admin, ATAU didaftar sendiri melalui pautan jemputan
       allow create, update: if masuk()
                     && request.resource.data.emel == emelPengguna
                     && request.resource.data.peranan in ['admin','guru']
-                    && (pemilik() || adminSekolah(request.resource.data.sid));
+                    && (
+                         pemilik()
+                      || adminSekolah(request.resource.data.sid)
+                      || (
+                           emelPengguna == emel()
+                        && jemputanSah(request.resource.data.kod,
+                                       request.resource.data.sid,
+                                       request.resource.data.peranan)
+                         )
+                    );
 
       allow delete: if masuk() && (pemilik() || adminSekolah(resource.data.sid));
     }

@@ -385,6 +385,17 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
 .tab2.on{background:var(--kad);color:var(--ink);box-shadow:0 1px 3px rgba(14,27,46,.14)}
 .pane2{display:none}.pane2.on{display:block}
 
+.tajuk-kecil{
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--muted);margin:0 0 12px;display:flex;align-items:center;gap:8px
+}
+.tajuk-kecil::after{content:"";flex:1;height:1px;background:var(--garis)}
+.pautan-kotak{margin-top:12px}
+.pautan-kotak[hidden]{display:none}
+.pautan-kotak input{
+  width:100%;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink);
+  background:var(--kertas);border:1.5px dashed var(--biru);border-radius:12px;padding:12px 13px
+}
 .banner{
   flex:none;background:var(--absen);color:#fff;font-size:12.5px;font-weight:600;
   padding:9px 14px;text-align:center;line-height:1.4
@@ -586,6 +597,34 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
     </div>
 
     <div class="pane" id="p3">
+      <p class="tajuk-kecil">Pautan jemputan</p>
+      <div class="field">
+        <label for="peranJemput">Peranan untuk pautan ini</label>
+        <div class="sel">
+          <select id="peranJemput">
+            <option value="guru">Guru — tanda kehadiran sahaja</option>
+            <option value="admin">Admin — boleh ubah tetapan</option>
+          </select>
+          <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+      </div>
+      <button class="utama" id="btnJemput">Buat pautan jemputan</button>
+      <div class="pautan-kotak" id="pautanKotak" hidden>
+        <input type="text" id="pautanTeks" readonly>
+        <div class="duo">
+          <button id="btnSalinPautan">
+            <svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M6 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V6"/></svg>
+            Salin
+          </button>
+          <button id="btnKongsiPautan">
+            <svg viewBox="0 0 24 24"><path d="M3 21l1.7-4.6A8.4 8.4 0 1 1 8 20.1z"/></svg>
+            WhatsApp
+          </button>
+        </div>
+      </div>
+      <div class="senarai-kecil" id="senaraiJemput"></div>
+
+      <p class="tajuk-kecil" style="margin-top:22px">Tambah seorang demi seorang</p>
       <div class="field">
         <label for="emelBaru">Emel Google guru</label>
         <input type="email" id="emelBaru" placeholder="cikgu@moe-dl.edu.my" autocomplete="off" inputmode="email">
@@ -1016,6 +1055,44 @@ function toast(msg,kind=''){
   clearTimeout(tId); tId=setTimeout(()=>t.className='toast '+kind,3600);
 }
 
+
+/* ── pautan jemputan (paparan) ──────────────────────────────── */
+window.EZ.tunjukPautan=function(url){
+  $('pautanKotak').hidden=false;
+  $('pautanTeks').value=url;
+  $('pautanTeks').focus(); $('pautanTeks').select();
+};
+window.EZ.lukisJemputan=function(senarai,batal){
+  const box=$('senaraiJemput'); box.innerHTML='';
+  if(!senarai.length) return;
+  senarai.forEach(j=>{
+    const t=j.tamat?new Date(j.tamat):null;
+    const luput=t&&t<new Date();
+    const r=document.createElement('div'); r.className='baris';
+    r.innerHTML='<div><b></b><small></small></div>'+
+      `<span class="tag ${luput?'mati':(j.peranan==='admin'?'admin':'')}">${luput?'luput':j.peranan}</span>`+
+      '<button class="buang" aria-label="Batalkan">✕</button>';
+    r.querySelector('b').textContent='Pautan '+j.kod;
+    r.querySelector('small').textContent = t
+      ? (luput?'Tamat ':'Sah hingga ')+pad(t.getDate())+'/'+pad(t.getMonth()+1)+'/'+t.getFullYear()
+      : 'Tanpa tamat tempoh';
+    r.querySelector('.buang').addEventListener('click',()=>batal(j.kod));
+    r.addEventListener('click',e=>{
+      if(e.target.closest('.buang')) return;
+      window.EZ.tunjukPautan(j.url);
+    });
+    box.appendChild(r);
+  });
+};
+$('btnSalinPautan').addEventListener('click',async()=>{
+  await salin($('pautanTeks').value); toast('Pautan disalin.','good');
+});
+$('btnKongsiPautan').addEventListener('click',()=>{
+  const u=$('pautanTeks').value;
+  const teks='Salam cikgu. Sila buka pautan ini dan log masuk dengan akaun Google untuk guna EZ-HADIR:\n'+u;
+  window.open('https://wa.me/?text='+encodeURIComponent(teks),'_blank');
+});
+
 /* ── telegram ───────────────────────────────────────────────── */
 async function tg(method,body,tokenPaksa){
   const token=(tokenPaksa||TG.botToken||'').trim();
@@ -1259,6 +1336,8 @@ A.onAuthStateChanged(auth, async u=>{
   window.__emelKini=u.email; lukisDiag();
   window.EZ.tunjukPengguna(u);
 
+  await cubaSertai(u);
+
   try{
     if(isPemilik()){
       const semua=await senaraiSemuaSekolah();
@@ -1319,7 +1398,7 @@ async function tukarSekolah(sid){
   window.EZ.lukisSekolahSaya(sekolahSaya, tukarSekolah);
 
   await muatData();
-  if(peranan==='admin'||peranan==='pemilik') muatPengguna();
+  if(peranan==='admin'||peranan==='pemilik'){ muatPengguna(); muatJemputan(); }
 }
 
 async function muatData(){
@@ -1369,6 +1448,87 @@ $('btnTambahGuru').addEventListener('click',async e=>{
   }catch(e2){ window.EZ.toast('Gagal tambah: '+ringkas(e2),'bad'); }
   b.disabled=false; b.textContent='Tambah pengguna';
 });
+
+
+/* ── pautan jemputan ────────────────────────────────────────── */
+const janaKod=()=>{
+  const huruf='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const a=new Uint8Array(8); crypto.getRandomValues(a);
+  return Array.from(a,x=>huruf[x%huruf.length]).join('');
+};
+const pautanJemput=kod=>location.origin+location.pathname+'?s='+sidKini+'&jemput='+kod;
+
+$('btnJemput').addEventListener('click',async e=>{
+  if(!sidKini) return window.EZ.toast('Pilih sekolah dahulu.','bad');
+  const b=e.target; b.disabled=true; b.textContent='Menjana…';
+  try{
+    const kod=janaKod();
+    const tamat=new Date(Date.now()+30*24*60*60*1000);   // sah 30 hari
+    await F.setDoc(F.doc(fs,'jemputan',kod),{
+      kod, sid:sidKini, peranan:$('peranJemput').value, aktif:true,
+      tamat:F.Timestamp.fromDate(tamat), dicipta:F.serverTimestamp(), oleh:emelSaya()
+    });
+    window.EZ.tunjukPautan(pautanJemput(kod));
+    window.EZ.toast('Pautan jemputan siap. Sah 30 hari.','good');
+    muatJemputan();
+  }catch(e2){ window.EZ.toast('Gagal jana pautan: '+ringkas(e2),'bad'); }
+  b.disabled=false; b.textContent='Buat pautan jemputan';
+});
+
+async function muatJemputan(){
+  try{
+    const q=F.query(F.collection(fs,'jemputan'), F.where('sid','==',sidKini));
+    const snap=await F.getDocs(q);
+    const senarai=snap.docs.map(d=>{
+      const v=d.data();
+      return {kod:d.id, peranan:v.peranan||'guru', aktif:v.aktif!==false,
+              tamat:v.tamat?.toDate?.()?.toISOString()||null, url:pautanJemput(d.id)};
+    }).filter(j=>j.aktif);
+    window.EZ.lukisJemputan(senarai, batalJemputan);
+  }catch(e){ /* senyap: bukan kritikal */ }
+}
+async function batalJemputan(kod){
+  if(!confirm('Batalkan pautan '+kod+'? Sesiapa yang belum guna tidak boleh sertai lagi.')) return;
+  try{
+    await F.deleteDoc(F.doc(fs,'jemputan',kod));
+    window.EZ.toast('Pautan dibatalkan.','good'); muatJemputan();
+  }catch(e){ window.EZ.toast('Gagal batal: '+ringkas(e),'bad'); }
+}
+
+/* Sertai sekolah menggunakan kod jemputan dari URL */
+async function cubaSertai(u){
+  const p=new URLSearchParams(location.search);
+  const kod=(p.get('jemput')||'').trim().toUpperCase();
+  if(!kod) return false;
+  try{
+    const d=await F.getDoc(F.doc(fs,'jemputan',kod));
+    if(!d.exists()) throw new Error('Pautan jemputan tidak sah.');
+    const j=d.data();
+    const tamat=j.tamat?.toDate?.();
+    if(j.aktif===false) throw new Error('Pautan jemputan telah dibatalkan.');
+    if(tamat && tamat<new Date()) throw new Error('Pautan jemputan telah tamat tempoh.');
+
+    let namaSekolah=j.sid;
+    try{
+      const sd=await F.getDoc(F.doc(fs,'sekolah',j.sid));
+      if(sd.exists()) namaSekolah=sd.data().nama||j.sid;
+    }catch{}
+
+    if(!confirm('Sertai '+namaSekolah+' sebagai '+(j.peranan==='admin'?'Admin':'Guru')+'?\n\nAkaun: '+u.email))
+      return false;
+
+    await F.setDoc(F.doc(fs,'pengguna',(u.email||'').toLowerCase()),{
+      emel:(u.email||'').toLowerCase(), sid:j.sid, peranan:j.peranan||'guru',
+      kod, nama:u.displayName||'', ditambah:F.serverTimestamp()
+    });
+    history.replaceState(null,'',location.pathname+'?s='+j.sid);
+    window.EZ.toast('Berjaya menyertai '+namaSekolah+'.','good');
+    return true;
+  }catch(e){
+    gagal(e?.message||ringkas(e));
+    return false;
+  }
+}
 
 /* ── simpan tetapan & kelas ─────────────────────────────────── */
 $('btnSimpanTg').addEventListener('click',async e=>{
