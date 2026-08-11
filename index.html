@@ -1,0 +1,1386 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0E1B2E" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0A1422" media="(prefers-color-scheme: dark)">
+<title>EZ-HADIR — Kehadiran Murid</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="EZ-HADIR">
+<meta name="description" content="Rekod kehadiran murid dan hantar laporan harian ke kumpulan Telegram sekolah.">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script>
+/* ══════════════════════════════════════════════════════════════
+   EZ-HADIR — tetapan pemasangan (satu fail untuk semua sekolah)
+   Data setiap sekolah terasing sepenuhnya dalam Firestore.
+   ══════════════════════════════════════════════════════════════ */
+const CONFIG = {
+  FIREBASE: {
+    apiKey:            "AIzaSyBQyQyzrrYua5VTEIWrtwCOZz7UGQz5qVI",
+    authDomain:        "ez-hadir.firebaseapp.com",
+    projectId:         "ez-hadir",
+    storageBucket:     "ez-hadir.firebasestorage.app",
+    messagingSenderId: "198348021865",
+    appId:             "1:198348021865:web:e5a167e59188979c86c2f8"
+  },
+
+  /* Emel PEMILIK produk (anda). Boleh cipta sekolah baharu,
+     tetapkan langganan, dan lantik admin pertama setiap sekolah.
+     Mesti sama dengan senarai dalam firestore.rules. */
+  PEMILIK: ["alimin@moe-dl.edu.my"],
+
+  /* Nama produk untuk paparan dan invois */
+  JENAMA: "EZ-HADIR"
+};
+</script>
+<style>
+/* ── token warna: diambil dari logo EZ-HADIR ───────────────── */
+:root{
+  --ink:#0E1B2E;      --ink-2:#33465F;   --muted:#6C7F96;
+  --kertas:#EFF3F8;   --kad:#FFFFFF;     --garis:#DBE3EC;
+  --bar:#0E1B2E;
+  --biru:#0B72E7;     --biru-2:#065BC0;
+  --hadir:#12805C;    --hadir-l:#E2F3EC;
+  --absen:#D14332;    --absen-l:#FCEAE7;
+  --r:16px;  --tap:56px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-tema="cerah"]){
+    --ink:#E8EFF7;    --ink-2:#B7C6D8;   --muted:#8397AE;
+    --kertas:#0A1422; --kad:#132234;     --garis:#22344A;
+    --bar:#08111D;
+    --biru:#3B96FF;   --biru-2:#2A7FE0;
+    --hadir:#4FD3A3;  --hadir-l:#123A30;
+    --absen:#FF8A76;  --absen-l:#3A1C18;
+  }
+}
+:root[data-tema="gelap"]{
+  --ink:#E8EFF7;      --ink-2:#B7C6D8;   --muted:#8397AE;
+  --kertas:#0A1422;   --kad:#132234;     --garis:#22344A;
+  --bar:#08111D;
+  --biru:#3B96FF;     --biru-2:#2A7FE0;
+  --hadir:#4FD3A3;    --hadir-l:#123A30;
+  --absen:#FF8A76;    --absen-l:#3A1C18;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%;height:100%}
+body{
+  margin:0;font-family:'Instrument Sans',system-ui,-apple-system,sans-serif;
+  font-size:16px;line-height:1.45;color:var(--ink);background:var(--kertas);
+  height:100vh;height:100dvh;overflow:hidden;
+  overscroll-behavior:none;touch-action:manipulation
+}
+button{font-family:inherit;cursor:pointer;color:inherit}
+:focus-visible{outline:2.5px solid var(--biru);outline-offset:2px;border-radius:8px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ── rangka: hanya senarai murid yang menatal ──────────────── */
+.app{height:100%;display:flex;flex-direction:column;overflow:hidden}
+.tetap{flex:none;background:var(--kertas)}
+.skrol{
+  flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;padding:0 14px 14px;
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 10px);
+          mask-image:linear-gradient(to bottom,transparent 0,#000 10px)
+}
+.dlm{max-width:560px;margin:0 auto}
+
+/* ── bar atas ──────────────────────────────────────────────── */
+.top{background:var(--bar);padding:calc(env(safe-area-inset-top) + 9px) 14px 9px}
+.top-in{max-width:560px;margin:0 auto;display:flex;align-items:center;gap:8px}
+.brand{display:flex;align-items:center;gap:9px;flex:1;min-width:0}
+.brand img{width:32px;height:32px;border-radius:9px;flex:none}
+.brand b{
+  display:block;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;
+  font-size:16.5px;letter-spacing:-.01em;color:#fff;line-height:1.12
+}
+.brand span{
+  display:block;font-family:'JetBrains Mono',monospace;font-size:9px;
+  letter-spacing:.15em;text-transform:uppercase;color:#8FA8C4;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+}
+.ico{
+  width:38px;height:38px;flex:none;display:grid;place-items:center;
+  background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);
+  border-radius:12px;color:#fff
+}
+.ico:active{background:rgba(255,255,255,.22)}
+.ico svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── papan info tetap ──────────────────────────────────────── */
+.papan{
+  max-width:560px;margin:0 auto;padding:12px 14px 0
+}
+.kad{
+  background:var(--kad);border:1px solid var(--garis);border-radius:var(--r);
+  padding:12px;box-shadow:0 1px 2px rgba(14,27,46,.05)
+}
+.pick{display:flex;gap:8px;margin-bottom:12px}
+.sel{position:relative;flex:1;min-width:0}
+.sel svg{position:absolute;right:11px;top:50%;transform:translateY(-50%);width:15px;height:15px;
+  stroke:var(--muted);fill:none;stroke-width:2;pointer-events:none}
+select,input[type=date],input[type=month]{
+  width:100%;height:46px;font-family:inherit;font-size:15px;font-weight:600;color:var(--ink);
+  background:var(--kertas);border:1.5px solid var(--garis);border-radius:12px;
+  padding:0 32px 0 12px;appearance:none;-webkit-appearance:none
+}
+input[type=date]{flex:none;width:auto;min-width:126px;padding:0 11px}
+select:focus,input:focus,textarea:focus{border-color:var(--biru);outline:none}
+
+.meter{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:10px}
+.big{flex:none}
+.big b{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:35px;
+  line-height:.92;letter-spacing:-.03em;font-variant-numeric:tabular-nums
+}
+.big small{
+  display:block;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);margin-top:6px;white-space:nowrap
+}
+.stats{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.pil{
+  font-size:11.5px;font-weight:600;padding:5px 9px;border-radius:9px;white-space:nowrap;
+  background:var(--kertas);border:1px solid var(--garis);color:var(--ink-2)
+}
+.pil b{font-variant-numeric:tabular-nums}
+.pil.red{background:var(--absen-l);border-color:transparent;color:var(--absen)}
+
+/* SIGNATURE: jalur kedatangan, satu petak satu murid */
+.ticks{display:flex;gap:3px;height:24px}
+.tk{flex:1;min-width:2px;border-radius:3px;background:var(--hadir);opacity:.85;transition:background .16s,transform .16s}
+.tk.off{background:var(--absen);opacity:1;transform:scaleY(1.14)}
+.ticks:empty::after{
+  content:"Tiada murid";flex:1;display:grid;place-items:center;font-size:12px;
+  color:var(--muted);background:var(--kertas);border-radius:6px
+}
+
+/* ── carian ────────────────────────────────────────────────── */
+.tools{max-width:560px;margin:0 auto;display:flex;gap:8px;padding:10px 14px}
+.cari{position:relative;flex:1}
+.cari svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;
+  stroke:var(--muted);fill:none;stroke-width:2;stroke-linecap:round}
+.cari input{
+  width:100%;height:44px;font-size:16px;font-family:inherit;color:var(--ink);
+  background:var(--kad);border:1.5px solid var(--garis);border-radius:12px;padding:0 12px 0 36px
+}
+.tools button{
+  flex:none;height:44px;padding:0 14px;border:1.5px solid var(--garis);background:var(--kad);
+  color:var(--ink-2);border-radius:12px;font-weight:600;font-size:13.5px
+}
+.tools button:active{background:var(--kertas)}
+
+/* ── senarai murid (kawasan menatal) ───────────────────────── */
+.roll{background:var(--kad);border:1px solid var(--garis);border-radius:var(--r);overflow:hidden}
+.pupil{
+  display:flex;align-items:center;gap:9px;min-height:var(--tap);padding:8px 12px;
+  border-bottom:1px solid var(--garis);background:var(--kad);
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transition:background .14s
+}
+.pupil:last-child{border-bottom:0}
+.pupil:active{background:var(--kertas)}
+.pupil[hidden]{display:none}
+.no{width:20px;flex:none;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);text-align:right}
+.jn{
+  width:26px;height:26px;flex:none;border-radius:8px;display:grid;place-items:center;
+  font:700 11px 'JetBrains Mono',monospace;background:var(--kertas);color:var(--ink-2)
+}
+.nm{flex:1;min-width:0;font-size:14px;font-weight:500;line-height:1.28;letter-spacing:-.005em}
+.st{
+  flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;
+  border:2px solid var(--garis);color:transparent;transition:.14s
+}
+.st svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round}
+.pupil.absent{background:var(--absen-l)}
+.pupil.absent .nm{color:var(--absen);text-decoration:line-through;text-decoration-thickness:1.5px}
+.pupil.absent .jn{background:transparent;color:var(--absen)}
+.pupil.absent .st{background:var(--absen);border-color:var(--absen);color:#fff}
+.kosong{padding:34px 20px;text-align:center;color:var(--muted);font-size:14px;line-height:1.6}
+
+/* ── bar tindakan bawah ────────────────────────────────────── */
+.bar{
+  flex:none;background:var(--kad);border-top:1px solid var(--garis);
+  padding:9px 14px calc(env(safe-area-inset-bottom) + 9px)
+}
+.bar-in{max-width:560px;margin:0 auto;display:flex;gap:8px}
+.hantar{
+  flex:1;height:52px;border:0;border-radius:15px;background:var(--biru);color:#fff;
+  font-weight:700;font-size:15.5px;display:flex;align-items:center;justify-content:center;gap:9px;
+  box-shadow:0 3px 0 var(--biru-2)
+}
+.hantar:active{transform:translateY(2px);box-shadow:0 1px 0 var(--biru-2)}
+.hantar[disabled]{background:var(--muted);box-shadow:none}
+.hantar svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sisi{
+  height:52px;padding:0 16px;flex:none;border:1.5px solid var(--garis);background:var(--kertas);
+  color:var(--ink-2);border-radius:15px;display:flex;align-items:center;gap:7px;font-weight:600;font-size:13.5px
+}
+.sisi:active{background:var(--kad)}
+.sisi svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── helaian ───────────────────────────────────────────────── */
+.sheet{position:fixed;inset:0;z-index:60;display:none;background:rgba(6,14,25,.55);align-items:flex-end;justify-content:center}
+.sheet.open{display:flex}
+.sheet-in{
+  background:var(--kad);width:100%;max-width:560px;border-radius:22px 22px 0 0;
+  padding:8px 14px calc(env(safe-area-inset-bottom) + 18px);
+  max-height:92dvh;overflow:auto;-webkit-overflow-scrolling:touch
+}
+.grip{width:38px;height:4px;border-radius:99px;background:var(--garis);margin:8px auto 12px}
+.sheet-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.sheet-top h2{font-family:'Bricolage Grotesque',sans-serif;font-size:19px;margin:0}
+.tutup{width:38px;height:38px;border:1.5px solid var(--garis);background:var(--kertas);border-radius:11px;color:var(--muted);font-size:17px}
+
+/* menu */
+.menu-item{
+  width:100%;display:flex;align-items:center;gap:12px;min-height:54px;padding:0 13px;
+  border:1.5px solid var(--garis);background:var(--kertas);border-radius:13px;
+  font-weight:600;font-size:14.5px;color:var(--ink);margin-bottom:9px;text-align:left
+}
+.menu-item:active{background:var(--kad)}
+.menu-item[hidden]{display:none}
+.menu-item svg{width:19px;height:19px;flex:none;stroke:var(--muted);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.menu-item i{margin-left:auto;font-style:normal;font-size:12px;color:var(--muted);font-weight:500}
+.menu-item.bahaya{color:var(--absen)} .menu-item.bahaya svg{stroke:var(--absen)}
+
+/* pratonton mesej */
+.bubble{background:var(--kertas);border-radius:14px 14px 14px 5px;padding:13px 14px}
+.bubble pre{margin:0;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.62;
+  white-space:pre-wrap;word-break:break-word;color:var(--ink)}
+.cap{display:flex;justify-content:flex-end;gap:5px;margin-top:7px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted)}
+.duo{display:flex;gap:9px;margin-top:14px}
+.duo button{
+  flex:1;height:48px;border:1.5px solid var(--garis);background:var(--kertas);color:var(--ink-2);
+  border-radius:13px;font-weight:600;font-size:14px;display:flex;align-items:center;justify-content:center;gap:8px
+}
+.duo svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+
+/* borang tetapan */
+.tabs{display:flex;gap:5px;background:var(--kertas);padding:4px;border-radius:13px;margin-bottom:16px}
+.tab{flex:1;height:40px;border:0;background:transparent;border-radius:10px;font-weight:600;font-size:13.5px;color:var(--muted)}
+.tab.on{background:var(--kad);color:var(--ink);box-shadow:0 1px 3px rgba(14,27,46,.14)}
+.pane{display:none}.pane.on{display:block}
+label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-2);margin-bottom:6px}
+input[type=text],input[type=password],input[type=email],textarea{
+  width:100%;font-family:inherit;font-size:16px;color:var(--ink);background:var(--kertas);
+  border:1.5px solid var(--garis);border-radius:12px;padding:12px 13px
+}
+textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;min-height:150px;resize:vertical}
+.field+.field{margin-top:13px}
+.hint{font-size:12px;color:var(--muted);margin:7px 0 0;line-height:1.5}
+.check{display:flex;align-items:center;gap:11px;margin-top:15px;font-size:14px;color:var(--ink-2)}
+.check input{width:21px;height:21px;accent-color:var(--biru)}
+.utama{width:100%;height:52px;border:0;border-radius:14px;background:var(--biru);color:#fff;font-weight:700;font-size:15.5px;margin-top:16px}
+.utama:active{transform:translateY(1px)}
+.utama[disabled]{background:var(--muted)}
+.kedua{width:100%;height:48px;border:1.5px solid var(--garis);background:var(--kertas);color:var(--ink-2);border-radius:13px;font-weight:600;font-size:14px;margin-top:9px}
+.who{display:flex;align-items:center;gap:11px;background:var(--kertas);border:1px solid var(--garis);border-radius:14px;padding:11px 12px;margin-bottom:14px}
+.who img{width:38px;height:38px;border-radius:50%;flex:none;background:var(--garis)}
+.who div{flex:1;min-width:0}
+.who b{display:block;font-size:14px;line-height:1.2}
+.who small{color:var(--muted);font-size:11.5px;word-break:break-all}
+.who button{flex:none;border:1.5px solid var(--garis);background:var(--kad);color:var(--absen);border-radius:11px;padding:9px 12px;font-weight:600;font-size:12.5px}
+.amaran{background:#FFF6E3;border:1px solid #F2DDAE;color:#7D5A12;padding:11px 13px;border-radius:13px;font-size:12.5px;margin-bottom:14px;line-height:1.5}
+:root[data-tema="gelap"] .amaran{background:#33280F;border-color:#4E3D16;color:#F0CF86}
+@media (prefers-color-scheme: dark){ :root:not([data-tema="cerah"]) .amaran{background:#33280F;border-color:#4E3D16;color:#F0CF86} }
+
+/* ── skrin log masuk ───────────────────────────────────────── */
+.gate{
+  position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:28px;
+  background:#0A1422;background-image:radial-gradient(120% 80% at 50% 0%,#123B6B 0%,#0A1422 62%)
+}
+.gate[hidden]{display:none}
+.gate-in{max-width:340px;width:100%;text-align:center;color:#fff}
+.gate-in img{width:110px;height:110px;border-radius:27px;box-shadow:0 14px 40px rgba(0,0,0,.45)}
+.gate-in h2{font-family:'Bricolage Grotesque',sans-serif;font-size:29px;margin:20px 0 7px;letter-spacing:-.025em}
+.gate-in p{color:#A6BCD6;font-size:14.5px;margin:0 0 24px;line-height:1.55}
+.g-btn{width:100%;height:54px;display:flex;align-items:center;justify-content:center;gap:10px;
+  background:#fff;color:#1A2433;border:0;border-radius:14px;font-weight:600;font-size:15.5px}
+.g-btn:active{transform:translateY(1px)}
+.g-btn[disabled]{opacity:.6}
+.gate-err{color:#FFB1A3;font-size:13px;min-height:19px;margin-top:15px;line-height:1.5}
+.gate-note{color:#7A91AC;font-size:11.5px;margin-top:22px;line-height:1.55}
+
+/* ── toast ─────────────────────────────────────────────────── */
+.toast{
+  position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));z-index:80;
+  transform:translate(-50%,16px);background:var(--ink);color:var(--kad);
+  padding:13px 17px;border-radius:14px;font-size:13.5px;font-weight:500;line-height:1.4;
+  max-width:88%;opacity:0;pointer-events:none;transition:.2s;text-align:center;
+  box-shadow:0 8px 24px rgba(6,14,25,.3)
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.bad{background:var(--absen);color:#fff}
+.toast.good{background:var(--hadir);color:#fff}
+
+/* ── berbilang sekolah ─────────────────────────────────────── */
+.lencana{
+  flex:none;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  padding:5px 9px;border-radius:8px;background:var(--biru);color:#fff
+}
+.lencana.pemilik{background:#8A5CF6}
+.lencana.guru{background:var(--garis);color:var(--ink-2)}
+.sekolah-kad{
+  background:var(--kertas);border:1px solid var(--garis);border-radius:14px;
+  padding:12px 13px;margin-bottom:12px
+}
+.sekolah-kad b{display:block;font-size:15px;line-height:1.3}
+.sekolah-kad span{
+  display:block;font-family:'JetBrains Mono',monospace;font-size:10.5px;
+  color:var(--muted);margin-top:4px
+}
+.sekolah-kad.tamat{background:var(--absen-l);border-color:transparent}
+.sekolah-kad.tamat span{color:var(--absen)}
+
+.senarai-kecil{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.baris{
+  display:flex;align-items:center;gap:10px;min-height:52px;padding:9px 12px;
+  background:var(--kertas);border:1.5px solid var(--garis);border-radius:13px;text-align:left;width:100%
+}
+.baris div{flex:1;min-width:0}
+.baris b{display:block;font-size:14px;font-weight:600;line-height:1.25}
+.baris small{display:block;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);word-break:break-all}
+.baris .tag{
+  flex:none;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+  padding:4px 8px;border-radius:7px;background:var(--kad);color:var(--muted);border:1px solid var(--garis)
+}
+.baris .tag.admin{background:var(--biru);color:#fff;border-color:transparent}
+.baris .tag.mati{background:var(--absen);color:#fff;border-color:transparent}
+.baris .buang{
+  flex:none;width:34px;height:34px;border-radius:10px;border:1.5px solid var(--garis);
+  background:var(--kad);color:var(--absen);font-size:15px;line-height:1
+}
+.baris.pilih:active{background:var(--kad)}
+.senarai-kecil .kosong{padding:20px;font-size:13px}
+
+.tab2{flex:1;height:40px;border:0;background:transparent;border-radius:10px;font-weight:600;font-size:13.5px;color:var(--muted);font-family:inherit;cursor:pointer}
+.tab2.on{background:var(--kad);color:var(--ink);box-shadow:0 1px 3px rgba(14,27,46,.14)}
+.pane2{display:none}.pane2.on{display:block}
+
+.banner{
+  flex:none;background:var(--absen);color:#fff;font-size:12.5px;font-weight:600;
+  padding:9px 14px;text-align:center;line-height:1.4
+}
+.banner[hidden]{display:none}
+</style>
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <div class="gate-in">
+    <img src="icon-192.png" alt="">
+    <h2>EZ-HADIR</h2>
+    <p>Log masuk dengan akaun Google sekolah untuk merekod kehadiran kelas.</p>
+    <button class="g-btn" id="btnGoogle">
+      <svg width="19" height="19" viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45 24c0-1.6-.1-2.7-.4-3.9H24v7.1h12c-.2 1.9-1.5 4.7-4.4 6.6l6.7 5.2C42.2 35.3 45 30.1 45 24z"/><path fill="#34A853" d="M24 46c5.9 0 10.9-1.9 14.5-5.3l-6.9-5.3c-1.8 1.3-4.3 2.2-7.6 2.2-5.8 0-10.7-3.8-12.5-9.1l-7.1 5.5C8.1 41.1 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.5 28.5c-.5-1.4-.7-2.9-.7-4.5s.3-3.1.7-4.5l-7.1-5.5C2.9 17.1 2 20.4 2 24s.9 6.9 2.4 10z"/><path fill="#EA4335" d="M24 10.7c3.2 0 5.4 1.4 6.6 2.6l6-5.9C32.9 4 28.9 2 24 2 15.4 2 8.1 6.9 4.4 14l7.1 5.5c1.8-5.3 6.7-8.8 12.5-8.8z"/></svg>
+      Log masuk dengan Google
+    </button>
+    <p class="gate-err" id="gateErr"></p>
+    <p class="gate-note" id="gateNote"></p>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- ── kekal di atas ───────────────────────────────────── -->
+  <div class="tetap">
+    <header class="top">
+      <div class="top-in">
+        <div class="brand">
+          <img src="icon-192.png" alt="">
+          <div><b>EZ-HADIR</b><span id="brandSub">Kehadiran Harian</span></div>
+        </div>
+        <button class="ico" id="btnTema" aria-label="Tukar tema">
+          <svg id="ikonTema" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></svg>
+        </button>
+        <button class="ico" id="btnMenu" aria-label="Menu">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="banner" id="banner" hidden></div>
+
+    <div class="papan">
+      <div class="kad">
+        <div class="pick">
+          <div class="sel">
+            <select id="kelas" aria-label="Pilih kelas"></select>
+            <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+          <input type="date" id="tarikh" aria-label="Tarikh">
+        </div>
+        <div class="meter">
+          <div class="big"><b id="tHadir">00/00</b><small id="hariChip">hadir</small></div>
+          <div class="stats">
+            <span class="pil">L <b id="tL">00/00</b></span>
+            <span class="pil">P <b id="tP">00/00</b></span>
+            <span class="pil red">Tidak hadir <b id="tA">0</b></span>
+          </div>
+        </div>
+        <div class="ticks" id="ticks" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <div class="tools">
+      <div class="cari">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" id="cari" placeholder="Cari nama murid" enterkeyhint="search" autocomplete="off">
+      </div>
+      <button id="btnReset">Semua hadir</button>
+    </div>
+  </div>
+
+  <!-- ── hanya bahagian ini menatal ──────────────────────── -->
+  <div class="skrol">
+    <div class="dlm"><div class="roll" id="roll"></div></div>
+  </div>
+
+  <!-- ── kekal di bawah ──────────────────────────────────── -->
+  <div class="bar">
+    <div class="bar-in">
+      <button class="sisi" id="btnPeek">
+        <svg viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg>
+        Mesej
+      </button>
+      <button class="hantar" id="btnSend">
+        <svg viewBox="0 0 24 24"><path d="M21.5 3.5 2.8 10.3c-.8.3-.8 1.4 0 1.7l6.4 2.3 2.3 6.4c.3.8 1.4.8 1.7 0z"/><path d="M21.5 3.5 9.2 14.3"/></svg>
+        Hantar ke Telegram
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── menu ──────────────────────────────────────────────── -->
+<div class="sheet" id="sheetMenu">
+  <div class="sheet-in">
+    <div class="grip"></div>
+    <div class="sheet-top"><h2>Menu</h2><button class="tutup" data-tutup="sheetMenu" aria-label="Tutup">✕</button></div>
+    <div class="who" id="who" hidden>
+      <img id="whoPic" alt="">
+      <div><b id="whoName">—</b><small id="whoMail">—</small></div>
+      <span class="lencana" id="lencana">Guru</span>
+    </div>
+    <div class="sekolah-kad" id="sekolahKad" hidden>
+      <b id="skNama">—</b>
+      <span id="skLangganan">—</span>
+    </div>
+    <button class="menu-item" id="btnTukarSekolah" hidden>
+      <svg viewBox="0 0 24 24"><path d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9.5 21v-6h5v6"/></svg>
+      Tukar sekolah
+    </button>
+    <button class="menu-item" id="btnInstall" hidden>
+      <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+      Pasang ke skrin utama
+    </button>
+    <button class="menu-item" id="btnTema2">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2"/></svg>
+      Tema paparan <i id="labelTema">Ikut telefon</i>
+    </button>
+    <button class="menu-item" id="btnSet" hidden>
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M4.5 12a7.5 7.5 0 0 1 .2-1.6L3 9l1.5-2.6 1.9.6A7.5 7.5 0 0 1 8.8 5.5L9 3.5h3l.2 2c.9.3 1.7.7 2.4 1.3l1.9-.6L18 9l-1.7 1.4a7.5 7.5 0 0 1 0 3.2L18 15l-1.5 2.6-1.9-.6c-.7.6-1.5 1-2.4 1.3l-.2 2H9l-.2-2a7.5 7.5 0 0 1-2.4-1.3l-1.9.6L3 15l1.7-1.4A7.5 7.5 0 0 1 4.5 12z"/></svg>
+      Tetapan admin
+    </button>
+    <button class="menu-item" id="btnPemilik" hidden>
+      <svg viewBox="0 0 24 24"><path d="M4 20h16M6 20V9.5l6-4.5 6 4.5V20"/><path d="M10 20v-5h4v5"/></svg>
+      Panel pemilik <i>Semua sekolah</i>
+    </button>
+    <button class="menu-item bahaya" id="btnKeluar">
+      <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14 5-5-5-5m5 5H9"/></svg>
+      Log keluar
+    </button>
+  </div>
+</div>
+
+<!-- ── pratonton mesej ───────────────────────────────────── -->
+<div class="sheet" id="sheetMsg">
+  <div class="sheet-in">
+    <div class="grip"></div>
+    <div class="sheet-top"><h2>Mesej untuk Telegram</h2><button class="tutup" data-tutup="sheetMsg" aria-label="Tutup">✕</button></div>
+    <div class="bubble"><pre id="preview"></pre></div>
+    <div class="cap"><span id="stampTime">—</span><span>✓✓</span></div>
+    <div class="duo">
+      <button id="btnCopy">
+        <svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M6 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V6"/></svg>
+        Salin teks
+      </button>
+      <button id="btnWa">
+        <svg viewBox="0 0 24 24"><path d="M3 21l1.7-4.6A8.4 8.4 0 1 1 8 20.1z"/><path d="M8.6 9.2c.3 2.4 3.4 5.4 5.8 5.7l1-1.4 2 .9-.4 1.7c-2.9.7-7.9-3.4-8.9-6.6l1.7-.5z"/></svg>
+        WhatsApp
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── tetapan admin ─────────────────────────────────────── -->
+<div class="sheet" id="sheet">
+  <div class="sheet-in">
+    <div class="grip"></div>
+    <div class="sheet-top"><h2>Tetapan admin</h2><button class="tutup" data-tutup="sheet" aria-label="Tutup">✕</button></div>
+
+    <div class="amaran" id="amaranAdmin" hidden>
+      Senarai <b>CONFIG.ADMIN</b> masih kosong, jadi semua guru boleh ubah tetapan. Isi emel admin dalam <b>index.html</b>.
+    </div>
+
+    <div class="tabs">
+      <button class="tab on" data-pane="p1">Telegram</button>
+      <button class="tab" data-pane="p2">Murid</button>
+      <button class="tab" data-pane="p3">Guru</button>
+    </div>
+
+    <div class="pane on" id="p1">
+      <div class="field"><label for="token">Bot token</label>
+        <input type="password" id="token" placeholder="8123456789:AAH..." autocomplete="off"></div>
+      <div class="field"><label for="chat">Chat ID kumpulan sekolah</label>
+        <input type="text" id="chat" placeholder="-1001234567890" autocomplete="off"></div>
+      <label class="check"><input type="checkbox" id="mono"> Hantar dalam blok monospace</label>
+      <button class="utama" id="btnSimpanTg">Simpan ke Firebase</button>
+      <button class="kedua" id="btnTest">Semak sambungan</button>
+      <p class="hint">Token disimpan dalam Firestore, bukan dalam fail app.</p>
+    </div>
+
+    <div class="pane" id="p2">
+      <button class="kedua" id="btnImport" style="margin-top:0">Import fail Excel senarai murid</button>
+      <input type="file" id="fileXls" accept=".xlsx,.xls" hidden>
+      <div class="field" style="margin-top:14px"><label for="namaKelas">Nama kelas</label>
+        <input type="text" id="namaKelas" placeholder="5 ILTIZAM"></div>
+      <div class="field"><label for="senarai">Senarai murid, satu nama satu baris</label>
+        <textarea id="senarai" spellcheck="false" placeholder="L|Ahmad Danial&#10;P|Nur Aisyah"></textarea>
+        <p class="hint">Mula setiap baris dengan <b>L</b> atau <b>P</b>, diikuti <b>|</b> dan nama.</p></div>
+      <button class="kedua" id="btnApply">Guna senarai ini buat sementara</button>
+      <button class="utama" id="btnSimpanKelas">Simpan semua kelas ke Firebase</button>
+      <p class="hint">Simpan akan menggantikan keseluruhan senarai kelas sekolah ini.</p>
+    </div>
+
+    <div class="pane" id="p3">
+      <div class="field">
+        <label for="emelBaru">Emel Google guru</label>
+        <input type="email" id="emelBaru" placeholder="cikgu@moe-dl.edu.my" autocomplete="off" inputmode="email">
+      </div>
+      <div class="field">
+        <label for="peranBaru">Peranan</label>
+        <div class="sel">
+          <select id="peranBaru">
+            <option value="guru">Guru — tanda kehadiran sahaja</option>
+            <option value="admin">Admin — boleh ubah tetapan</option>
+          </select>
+          <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+      </div>
+      <button class="utama" id="btnTambahGuru">Tambah pengguna</button>
+      <div class="senarai-kecil" id="senaraiGuru"></div>
+      <p class="hint">Guru hanya boleh log masuk jika emelnya ada dalam senarai ini.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── pilih sekolah ─────────────────────────────────────── -->
+<div class="sheet" id="sheetSekolah">
+  <div class="sheet-in">
+    <div class="grip"></div>
+    <div class="sheet-top"><h2>Pilih sekolah</h2><button class="tutup" data-tutup="sheetSekolah" aria-label="Tutup">✕</button></div>
+    <div class="senarai-kecil" id="senaraiSekolahSaya"></div>
+  </div>
+</div>
+
+<!-- ── panel pemilik ─────────────────────────────────────── -->
+<div class="sheet" id="sheetPemilik">
+  <div class="sheet-in">
+    <div class="grip"></div>
+    <div class="sheet-top"><h2>Panel pemilik</h2><button class="tutup" data-tutup="sheetPemilik" aria-label="Tutup">✕</button></div>
+
+    <div class="tabs">
+      <button class="tab2 on" data-pane2="q1">Sekolah</button>
+      <button class="tab2" data-pane2="q2">Daftar baharu</button>
+    </div>
+
+    <div class="pane2 on" id="q1">
+      <div class="senarai-kecil" id="senaraiSekolah"></div>
+      <button class="kedua" id="btnMuatSekolah">Muat semula senarai</button>
+    </div>
+
+    <div class="pane2" id="q2">
+      <div class="field"><label for="sNama">Nama sekolah</label>
+        <input type="text" id="sNama" placeholder="SK Belukar"></div>
+      <div class="field"><label for="sId">ID sekolah (huruf kecil, tiada ruang)</label>
+        <input type="text" id="sId" placeholder="sk-belukar" autocomplete="off"></div>
+      <div class="field"><label for="sAdmin">Emel admin pertama</label>
+        <input type="email" id="sAdmin" placeholder="gurubesar@moe-dl.edu.my" inputmode="email" autocomplete="off"></div>
+      <div class="field"><label for="sTamat">Langganan tamat</label>
+        <input type="date" id="sTamat" style="width:100%"></div>
+      <button class="utama" id="btnCiptaSekolah">Daftar sekolah</button>
+      <p class="hint">Pautan khas untuk sekolah ini: <b id="pautanContoh">?s=&lt;id&gt;</b></p>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+const $=id=>document.getElementById(id);
+const HARI=['AHAD','ISNIN','SELASA','RABU','KHAMIS','JUMAAT','SABTU'];
+const pad=n=>String(n).padStart(2,'0');
+const getar=ms=>{ try{ navigator.vibrate&&navigator.vibrate(ms); }catch{} };
+
+let DB={};                                    // { "5 ILTIZAM": ["L|Nama", ...] }
+let TG={botToken:'',chatId:'',mono:false};
+let kelasKini='', absen=new Set(), ADMIN=false, tapis='';
+let SEKOLAH=null, PERANAN='guru', LUPUT=false;
+
+function parse(list){
+  return (list||[]).map(s=>{
+    const m=String(s).trim().match(/^([LlPp])\s*[|,\-–:\s]\s*(.+)$/);
+    return m?{j:m[1].toUpperCase(),n:m[2].trim()}:{j:'L',n:String(s).trim()};
+  }).filter(o=>o.n);
+}
+const murid=()=>parse(DB[kelasKini]);
+
+/* ── antara muka untuk modul Firebase ───────────────────────── */
+window.EZ={
+  buka(){ $('gate').hidden=true; },
+  tutup(){ $('gate').hidden=false; },
+  tunjukPengguna(u){
+    if(!u){ $('who').hidden=true; return; }
+    $('who').hidden=false;
+    $('whoName').textContent=u.displayName||'Guru';
+    $('whoMail').textContent=u.email||'';
+    if(u.photoURL) $('whoPic').src=u.photoURL;
+  },
+  muatKelas(obj){
+    DB=obj||{};
+    const keys=Object.keys(DB).sort((a,b)=>a.localeCompare(b,'ms',{numeric:true}));
+    if(!keys.includes(kelasKini)) kelasKini=keys[0]||'';
+    absen.clear(); drawKelas(); loadEditor(); render();
+  },
+  muatTelegram(t){
+    TG={botToken:t?.botToken||'',chatId:t?.chatId||'',mono:!!t?.mono};
+    $('token').value=TG.botToken; $('chat').value=TG.chatId; $('mono').checked=TG.mono;
+  },
+  setSekolah(info){
+    SEKOLAH=info||null;
+    const kad=$('sekolahKad');
+    if(!SEKOLAH){ kad.hidden=true; $('brandSub').textContent='Kehadiran Harian'; return; }
+    kad.hidden=false;
+    $('skNama').textContent=SEKOLAH.nama||SEKOLAH.id;
+    $('brandSub').textContent=SEKOLAH.nama||SEKOLAH.id;
+    const t=SEKOLAH.tamat?new Date(SEKOLAH.tamat):null;
+    const luput=(!SEKOLAH.aktif)||(t&&t<new Date());
+    $('skLangganan').textContent = SEKOLAH.id+' · '+(!SEKOLAH.aktif?'Dinyahaktifkan'
+      :(t?('Langganan hingga '+pad(t.getDate())+'/'+pad(t.getMonth()+1)+'/'+t.getFullYear()):'Langganan tanpa had'));
+    kad.classList.toggle('tamat',!!luput);
+    LUPUT=!!luput;
+    $('banner').hidden=!luput;
+    $('banner').textContent=!SEKOLAH.aktif
+      ? 'Akaun sekolah ini dinyahaktifkan. Hubungi penyedia '+CONFIG.JENAMA+'.'
+      : 'Langganan telah tamat. Laporan tidak boleh dihantar sehingga diperbaharui.';
+  },
+  setPeranan(p, bilSekolah){
+    PERANAN=p||'guru';
+    $('btnSet').hidden = !(PERANAN==='admin'||PERANAN==='pemilik');
+    $('btnPemilik').hidden = PERANAN!=='pemilik';
+    $('btnTukarSekolah').hidden = (bilSekolah||0)<2 && PERANAN!=='pemilik';
+    const l=$('lencana');
+    l.textContent = PERANAN==='pemilik'?'Pemilik':PERANAN==='admin'?'Admin':'Guru';
+    l.className='lencana '+(PERANAN==='guru'?'guru':PERANAN==='pemilik'?'pemilik':'');
+  },
+  lukisPengguna(senarai,emelSaya){
+    const box=$('senaraiGuru'); box.innerHTML='';
+    if(!senarai.length){ box.innerHTML='<div class="kosong">Belum ada pengguna didaftarkan.</div>'; return; }
+    senarai.forEach(u=>{
+      const r=document.createElement('div'); r.className='baris';
+      r.innerHTML='<div><b></b><small></small></div>'+
+        `<span class="tag ${u.peranan==='admin'?'admin':''}">${u.peranan}</span>`+
+        (u.emel===emelSaya?'':'<button class="buang" aria-label="Buang">✕</button>');
+      r.querySelector('b').textContent=u.nama||u.emel.split('@')[0];
+      r.querySelector('small').textContent=u.emel;
+      const x=r.querySelector('.buang');
+      if(x) x.addEventListener('click',()=>window.EZfs?.buangPengguna(u.emel));
+      box.appendChild(r);
+    });
+  },
+  lukisSekolahSaya(senarai,pilih){
+    const box=$('senaraiSekolahSaya'); box.innerHTML='';
+    senarai.forEach(sk=>{
+      const r=document.createElement('button'); r.className='baris pilih';
+      r.innerHTML='<div><b></b><small></small></div>'+
+        (sk.id===(SEKOLAH&&SEKOLAH.id)?'<span class="tag admin">Sedang guna</span>':'');
+      r.querySelector('b').textContent=sk.nama||sk.id;
+      r.querySelector('small').textContent=sk.id+' · '+sk.peranan;
+      r.addEventListener('click',()=>{ tutupSheet('sheetSekolah'); pilih(sk.id); });
+      box.appendChild(r);
+    });
+  },
+  lukisSemuaSekolah(senarai,tindakan){
+    const box=$('senaraiSekolah'); box.innerHTML='';
+    if(!senarai.length){ box.innerHTML='<div class="kosong">Belum ada sekolah didaftarkan.</div>'; return; }
+    senarai.forEach(sk=>{
+      const t=sk.tamat?new Date(sk.tamat):null;
+      const luput=(!sk.aktif)||(t&&t<new Date());
+      const r=document.createElement('div'); r.className='baris';
+      r.innerHTML='<div><b></b><small></small></div>'+
+        `<span class="tag ${luput?'mati':'admin'}">${sk.aktif?(luput?'tamat':'aktif'):'mati'}</span>`;
+      r.querySelector('b').textContent=sk.nama||sk.id;
+      r.querySelector('small').textContent=sk.id+' · '+(sk.bilKelas??'?')+' kelas · '+
+        (t?pad(t.getDate())+'/'+pad(t.getMonth()+1)+'/'+t.getFullYear():'tanpa had');
+      r.addEventListener('click',()=>tindakan(sk));
+      box.appendChild(r);
+    });
+  },
+  bolehHantar:()=>!LUPUT,
+  ambilDB:()=>DB,
+  ambilTG:()=>({botToken:$('token').value.trim(),chatId:$('chat').value.trim(),mono:$('mono').checked}),
+  toast
+};
+
+function init(){
+  pakaiTema();
+  const d=new Date();
+  $('tarikh').value=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  render();
+}
+function drawKelas(){
+  const s=$('kelas'); s.innerHTML='';
+  Object.keys(DB).sort((a,b)=>a.localeCompare(b,'ms',{numeric:true})).forEach(k=>{
+    const o=document.createElement('option'); o.value=k; o.textContent=k; s.appendChild(o);
+  });
+  if(!Object.keys(DB).length){
+    const o=document.createElement('option'); o.textContent='Tiada kelas'; s.appendChild(o);
+  }
+  s.value=kelasKini;
+}
+function loadEditor(){
+  $('namaKelas').value=kelasKini;
+  $('senarai').value=(DB[kelasKini]||[]).join('\n');
+}
+
+const IKON_X='<svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17"/></svg>';
+
+function drawRoll(){
+  const box=$('roll'), list=murid();
+  box.innerHTML='';
+  if(!list.length){
+    box.innerHTML='<div class="kosong">Senarai murid belum dimuatkan.<br>Hubungi admin sekolah untuk mengisinya.</div>';
+    return;
+  }
+  const q=tapis.toLowerCase();
+  let nampak=0;
+  list.forEach((m,i)=>{
+    const row=document.createElement('div');
+    row.className='pupil'+(absen.has(i)?' absent':'');
+    row.setAttribute('role','button');
+    row.setAttribute('aria-pressed',absen.has(i)?'true':'false');
+    if(q && !m.n.toLowerCase().includes(q)) row.hidden=true; else nampak++;
+    row.innerHTML=`<span class="no">${pad(i+1)}</span><span class="jn">${m.j}</span><span class="nm"></span>`+
+                  `<span class="st">${absen.has(i)?IKON_X:''}</span>`;
+    row.querySelector('.nm').textContent=m.n;
+    row.addEventListener('click',()=>{
+      absen.has(i)?absen.delete(i):absen.add(i);
+      getar(12); render();
+    });
+    box.appendChild(row);
+  });
+  if(q && !nampak){
+    const e=document.createElement('div');
+    e.className='kosong'; e.textContent='Tiada nama sepadan dengan "'+tapis+'".';
+    box.appendChild(e);
+  }
+}
+function drawTicks(k){
+  const t=$('ticks'); t.innerHTML='';
+  k.list.forEach((_,i)=>{
+    const s=document.createElement('i');
+    s.className='tk'+(absen.has(i)?' off':'');
+    t.appendChild(s);
+  });
+}
+function kira(){
+  const list=murid();
+  const lj=list.filter(m=>m.j==='L').length, pj=list.length-lj;
+  let lh=0,ph=0;
+  list.forEach((m,i)=>{ if(!absen.has(i)){ m.j==='L'?lh++:ph++; } });
+  return {list,lj,pj,lh,ph,jumlah:list.length,hadir:lh+ph,tak:absen.size};
+}
+function buildMsg(){
+  const k=kira();
+  const d=$('tarikh').value?new Date($('tarikh').value+'T00:00:00'):new Date();
+  const tarikh=`${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+  const nama=k.list.filter((_,i)=>absen.has(i)).map(m=>m.n);
+  let m='';
+  m+=`KELAS : ${kelasKini}\n`;
+  m+=`Tarikh :${tarikh}\n`;
+  m+=`Hari : ${HARI[d.getDay()]}\n`;
+  m+=`======================\n`;
+  m+=`BIL MURID           : ${k.jumlah} ORANG\n`;
+  m+=`LELAKI                 : ${pad(k.lh)}/${pad(k.lj)}\n`;
+  m+=`PEREMPUAN      : ${pad(k.ph)}/${pad(k.pj)}\n`;
+  m+=`JUMLAH HADIR : ${pad(k.hadir)}/${pad(k.jumlah)}\n\n`;
+  m+=`MURID TIDAK HADIR\n`;
+  m+=`*****************************\n`;
+  m+= nama.length?nama.map((s,i)=>`${i+1}. ${s}`).join('\n'):'TIADA — SEMUA HADIR';
+  return m;
+}
+function render(){
+  const k=kira();
+  const d=$('tarikh').value?new Date($('tarikh').value+'T00:00:00'):new Date();
+  $('tHadir').textContent=`${pad(k.hadir)}/${pad(k.jumlah)}`;
+  $('hariChip').textContent=`hadir · ${HARI[d.getDay()]}`;
+  $('tL').textContent=`${pad(k.lh)}/${pad(k.lj)}`;
+  $('tP').textContent=`${pad(k.ph)}/${pad(k.pj)}`;
+  $('tA').textContent=k.tak;
+  drawRoll(); drawTicks(k);
+  $('preview').textContent=buildMsg();
+  const t=new Date(); $('stampTime').textContent=`${pad(t.getHours())}:${pad(t.getMinutes())}`;
+}
+
+$('kelas').addEventListener('change',e=>{
+  kelasKini=e.target.value; absen.clear(); $('cari').value=''; tapis='';
+  loadEditor(); render();
+  document.querySelector('.skrol').scrollTop=0;
+});
+$('tarikh').addEventListener('change',render);
+$('cari').addEventListener('input',e=>{ tapis=e.target.value.trim(); drawRoll(); });
+$('btnReset').addEventListener('click',()=>{
+  if(!absen.size) return toast('Semua murid sudah ditanda hadir.');
+  absen.clear(); getar(15); render(); toast('Semua murid ditanda hadir.');
+});
+
+
+/* ── tema paparan: ikut telefon / cerah / gelap ─────────────── */
+const TEMA=['','cerah','gelap'];
+const LABEL={'':'Ikut telefon','cerah':'Cerah','gelap':'Gelap'};
+const IKON={
+  '':'<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/>',
+  'cerah':'<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/>',
+  'gelap':'<path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.3 8.3 0 1 0 20 14.5z"/>'
+};
+let temaKini=0;
+function pakaiTema(){
+  const t=TEMA[temaKini];
+  if(t) document.documentElement.setAttribute('data-tema',t);
+  else document.documentElement.removeAttribute('data-tema');
+  $('ikonTema').innerHTML=IKON[t];
+  $('labelTema').textContent=LABEL[t];
+  const gelap = t==='gelap' || (!t && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', gelap?'#08111D':'#0E1B2E');
+}
+function tukarTema(){
+  temaKini=(temaKini+1)%TEMA.length; pakaiTema(); getar(8);
+  toast('Tema: '+LABEL[TEMA[temaKini]]);
+}
+$('btnTema').addEventListener('click',tukarTema);
+$('btnTema2').addEventListener('click',tukarTema);
+
+/* ── helaian ────────────────────────────────────────────────── */
+function bukaSheet(id){ $(id).classList.add('open'); }
+function tutupSheet(id){ $(id).classList.remove('open'); }
+document.querySelectorAll('[data-tutup]').forEach(b=>b.addEventListener('click',()=>tutupSheet(b.dataset.tutup)));
+document.querySelectorAll('.sheet').forEach(sh=>sh.addEventListener('click',e=>{ if(e.target===sh) sh.classList.remove('open'); }));
+$('btnMenu').addEventListener('click',()=>bukaSheet('sheetMenu'));
+$('btnPeek').addEventListener('click',()=>{ render(); bukaSheet('sheetMsg'); });
+
+/* ── panel admin ────────────────────────────────────────────── */
+function openSheet(pane='p1'){
+  if(!(PERANAN==='admin'||PERANAN==='pemilik')) return toast('Tetapan hanya untuk admin sekolah.','bad');
+  tutupSheet('sheetMenu');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.pane===pane));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id===pane));
+  $('sheet').classList.add('open');
+}
+$('btnSet').addEventListener('click',()=>{ tutupSheet('sheetMenu'); openSheet('p1'); });
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>openSheet(t.dataset.pane)));
+document.querySelectorAll('.tab2').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab2').forEach(x=>x.classList.toggle('on',x===t));
+  document.querySelectorAll('.pane2').forEach(p=>p.classList.toggle('on',p.id===t.dataset.pane2));
+}));
+$('btnTukarSekolah').addEventListener('click',()=>{ tutupSheet('sheetMenu'); bukaSheet('sheetSekolah'); });
+$('btnPemilik').addEventListener('click',()=>{ tutupSheet('sheetMenu'); bukaSheet('sheetPemilik'); });
+$('sNama').addEventListener('input',e=>{
+  if(!$('sId').dataset.manual)
+    $('sId').value=e.target.value.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40);
+  $('pautanContoh').textContent='?s='+($('sId').value||'<id>');
+});
+$('sId').addEventListener('input',e=>{
+  e.target.dataset.manual='1';
+  $('pautanContoh').textContent='?s='+(e.target.value||'<id>');
+});
+
+$('btnApply').addEventListener('click',()=>{
+  const nama=$('namaKelas').value.trim();
+  const baris=$('senarai').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!nama) return toast('Isi nama kelas dahulu.','bad');
+  if(!baris.length) return toast('Senarai murid kosong.','bad');
+  if(nama!==kelasKini) delete DB[kelasKini];
+  DB[nama]=baris; kelasKini=nama; absen.clear();
+  drawKelas(); render();
+  toast(`${baris.length} murid dimuatkan. Tekan Simpan untuk kekalkan.`,'good');
+});
+
+$('btnImport').addEventListener('click',()=>{
+  if(typeof XLSX==='undefined') return toast('Pustaka Excel tidak dimuatkan. Sambung internet.','bad');
+  $('fileXls').click();
+});
+$('fileXls').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+    const up=v=>String(v==null?'':v).toUpperCase().trim();
+
+    let hdr=-1;
+    for(let i=0;i<Math.min(rows.length,40);i++) if(rows[i].some(c=>up(c)==='NAMA')){ hdr=i; break; }
+    if(hdr<0) throw new Error('Lajur NAMA tidak dijumpai.');
+    const H=rows[hdr].map(up);
+
+    const iNama=H.indexOf('NAMA');
+    const iJan =H.findIndex(h=>h.includes('JANTINA'));
+    const iStat=H.findIndex(h=>h.includes('STATUS PENGAJIAN'));
+    const iThn =H.findIndex(h=>(h.includes('TAHUN')||h.includes('TINGKATAN'))&&!h.includes('TARIKH'));
+    let iKelas =H.indexOf('NAMA KELAS');
+    if(iKelas<0) iKelas=H.findIndex(h=>h.includes('KELAS')&&!h.includes('TARIKH')&&!h.includes('JENIS')&&!h.includes('GURU'));
+
+    /* "TAHUN LIMA" + "ILTIZAM" -> "5 ILTIZAM" */
+    const NOM={SATU:'1',DUA:'2',TIGA:'3',EMPAT:'4',LIMA:'5',ENAM:'6'};
+    const gabung=(thn,kls)=>{
+      thn=up(thn); kls=up(kls);
+      if(!kls) return thn||'KELAS TANPA NAMA';
+      if(/PRASEKOLAH|PPKI|KHAS/.test(kls)) return kls;
+      if(/^\d/.test(kls)) return kls;
+      let d='';
+      const m=thn.match(/(?:^|\s)(\d)(?:\s|$)/);
+      if(m) d=m[1]; else for(const w in NOM) if(thn.includes(w)){ d=NOM[w]; break; }
+      return d?d+' '+kls:kls;
+    };
+
+    const bank={}; let langkau=0;
+    for(let i=hdr+1;i<rows.length;i++){
+      const nama=String(rows[i][iNama]||'').trim();
+      if(!nama) continue;
+      if(iStat>=0){
+        const st=up(rows[i][iStat]);
+        if(st && st!=='BERSEKOLAH'){ langkau++; continue; }
+      }
+      let j;
+      if(iJan>=0 && up(rows[i][iJan])) j = up(rows[i][iJan]).startsWith('P')?'P':'L';
+      else { const u=' '+nama.toUpperCase()+' '; j=(u.includes(' BINTI ')||u.includes(' BT ')||u.includes(' BINTE '))?'P':'L'; }
+      const kelas=gabung(iThn>=0?rows[i][iThn]:'', iKelas>=0?rows[i][iKelas]:'');
+      (bank[kelas]=bank[kelas]||[]).push(j+'|'+nama);
+    }
+    const keys=Object.keys(bank).sort((a,b)=>a.localeCompare(b,'ms',{numeric:true}));
+    if(!keys.length) throw new Error('Tiada nama murid dijumpai.');
+    keys.forEach(k=>bank[k].sort((a,b)=>a.slice(2).localeCompare(b.slice(2),'ms')));
+
+    DB=bank; kelasKini=keys[0]; absen.clear();
+    drawKelas(); loadEditor(); render();
+    const jum=Object.values(bank).reduce((n,a)=>n+a.length,0);
+    toast(`${keys.length} kelas, ${jum} murid${langkau?` (${langkau} dilangkau)`:''}. Tekan Simpan ke Firebase.`,'good');
+  }catch(err){ toast('Gagal baca fail: '+err.message,'bad'); }
+  e.target.value='';
+});
+
+/* ── toast ──────────────────────────────────────────────────── */
+let tId;
+function toast(msg,kind=''){
+  const t=$('toast'); t.textContent=msg; t.className='toast show '+kind;
+  clearTimeout(tId); tId=setTimeout(()=>t.className='toast '+kind,3600);
+}
+
+/* ── telegram ───────────────────────────────────────────────── */
+async function tg(method,body,tokenPaksa){
+  const token=(tokenPaksa||TG.botToken||'').trim();
+  if(!token) throw new Error('Bot token belum ditetapkan oleh admin.');
+  const r=await fetch(`https://api.telegram.org/bot${token}/${method}`,{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+  const j=await r.json();
+  if(!j.ok) throw new Error(j.description||'Telegram menolak permintaan.');
+  return j.result;
+}
+$('btnTest').addEventListener('click',async e=>{
+  const b=e.target; b.disabled=true; b.textContent='Menyemak…';
+  const tok=$('token').value.trim(), ch=$('chat').value.trim();
+  try{
+    const me=await tg('getMe',{},tok);
+    await tg('sendMessage',{chat_id:ch,text:`✅ Sambungan berjaya. Bot @${me.username} sedia digunakan.`},tok);
+    toast('Sambungan berjaya. Semak kumpulan Telegram.','good');
+  }catch(err){ toast(err.message,'bad'); }
+  b.disabled=false; b.textContent='Semak sambungan';
+});
+$('btnSend').addEventListener('click',async()=>{
+  if(LUPUT) return toast('Langganan sekolah ini telah tamat.','bad');
+  if(!TG.chatId) return toast('Chat ID belum ditetapkan oleh admin.','bad');
+  if(!kira().jumlah) return toast('Tiada murid dalam kelas ini.','bad');
+  const b=$('btnSend'), asal=b.innerHTML;
+  b.disabled=true; b.textContent='Menghantar…';
+  const teks=buildMsg();
+  try{
+    await tg('sendMessage', TG.mono
+      ? {chat_id:TG.chatId,text:'<pre>'+teks.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre>',parse_mode:'HTML'}
+      : {chat_id:TG.chatId,text:teks});
+    getar([12,60,12]);
+    tutupSheet('sheetMsg');
+    toast('Laporan dihantar ke Telegram.','good');
+  }catch(err){ toast(err.message,'bad'); }
+  b.disabled=false; b.innerHTML=asal;
+});
+
+async function salin(teks){
+  try{ await navigator.clipboard.writeText(teks); }
+  catch{
+    const ta=document.createElement('textarea'); ta.value=teks;
+    ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  }
+}
+$('btnCopy').addEventListener('click',async()=>{ await salin(buildMsg()); toast('Teks disalin.','good'); });
+$('btnWa').addEventListener('click',()=>window.open('https://wa.me/?text='+encodeURIComponent(buildMsg()),'_blank'));
+
+/* ── pemasangan PWA ─────────────────────────────────────────── */
+let promptPasang=null;
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); promptPasang=e; $('btnInstall').hidden=false; });
+$('btnInstall').addEventListener('click',async()=>{
+  tutupSheet('sheetMenu');
+  if(!promptPasang) return toast('Buka menu pelayar dan pilih “Tambah ke Skrin Utama”.');
+  promptPasang.prompt();
+  const {outcome}=await promptPasang.userChoice;
+  promptPasang=null; $('btnInstall').hidden=true;
+  if(outcome==='accepted') toast('EZ-HADIR dipasang pada skrin utama.','good');
+});
+window.addEventListener('appinstalled',()=>{ $('btnInstall').hidden=true; });
+const iOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+const berdiri=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+if(iOS&&!berdiri) $('btnInstall').hidden=false;
+
+/* ── service worker ─────────────────────────────────────────── */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      reg.addEventListener('updatefound',()=>{
+        const baru=reg.installing;
+        baru.addEventListener('statechange',()=>{
+          if(baru.state==='installed'&&navigator.serviceWorker.controller)
+            toast('Versi baharu tersedia. Tutup dan buka semula app.');
+        });
+      });
+    }).catch(()=>{});
+  });
+}
+
+init();
+</script>
+
+<script type="module">
+/* ══════════════════════════════════════════════════════════════
+   EZ-HADIR — log masuk Google + data berbilang sekolah
+
+   Struktur Firestore (setiap sekolah terasing sepenuhnya):
+     sekolah/{sid}                     nama, aktif, tamat
+     sekolah/{sid}/pengguna/{emel}     peranan: admin | guru
+     sekolah/{sid}/kelas/{kelasId}     nama, murid[]
+     sekolah/{sid}/tetapan/telegram    botToken, chatId, mono
+   ══════════════════════════════════════════════════════════════ */
+const $=id=>document.getElementById(id);
+const gate=$('gate'), err=$('gateErr'), note=$('gateNote'), btn=$('btnGoogle');
+
+const V='https://www.gstatic.com/firebasejs/11.0.2/';
+const [{initializeApp}, A, F] = await Promise.all([
+  import(V+'firebase-app.js'), import(V+'firebase-auth.js'), import(V+'firebase-firestore.js')
+]);
+
+const app=initializeApp(CONFIG.FIREBASE);
+const auth=A.getAuth(app);
+await A.setPersistence(auth,A.browserLocalPersistence).catch(()=>{});
+
+let fs;
+try{
+  fs=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})});
+}catch{ fs=F.getFirestore(app); }
+
+const provider=new A.GoogleAuthProvider();
+provider.setCustomParameters({prompt:'select_account'});
+
+const pemilikSenarai=(CONFIG.PEMILIK||[]).map(e=>e.toLowerCase()).filter(Boolean);
+const emelSaya=()=>(auth.currentUser?.email||'').toLowerCase();
+const isPemilik=()=>pemilikSenarai.includes(emelSaya());
+const slug=s=>String(s).trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,120)||'kelas';
+const hariIni=()=>new Date();
+
+let sekolahSaya=[], sidKini='', peranan='guru';
+
+note.textContent='Akaun anda perlu didaftarkan oleh admin sekolah terlebih dahulu.';
+const gagal=m=>{ err.textContent=m; btn.disabled=false; };
+
+await A.getRedirectResult(auth).catch(e=>gagal(mesej(e)));
+
+/* ── kitaran log masuk ──────────────────────────────────────── */
+A.onAuthStateChanged(auth, async u=>{
+  if(!u){
+    sekolahSaya=[]; sidKini=''; peranan='guru';
+    window.EZ.tutup(); btn.disabled=false;
+    window.EZ.tunjukPengguna(null); window.EZ.setSekolah(null); window.EZ.setPeranan('guru',0);
+    return;
+  }
+  window.EZ.tunjukPengguna(u);
+  try{
+    sekolahSaya=await cariSekolah(u.email);
+  }catch(e){ gagal('Gagal menyemak keahlian: '+ringkas(e)); return; }
+
+  if(!sekolahSaya.length && !isPemilik()){
+    await A.signOut(auth);
+    gagal('Akaun '+u.email+' belum didaftarkan pada mana-mana sekolah. Berikan emel ini kepada admin sekolah anda.');
+    return;
+  }
+
+  const dari=new URLSearchParams(location.search).get('s');
+  const pilihan = (dari && (sekolahSaya.some(s=>s.id===dari) || isPemilik())) ? dari
+                : (sekolahSaya[0]?.id || '');
+
+  window.EZ.buka(); err.textContent='';
+  window.EZ.lukisSekolahSaya(sekolahSaya, tukarSekolah);
+  if(pilihan) await tukarSekolah(pilihan);
+  else { window.EZ.setPeranan('pemilik',0); window.EZ.toast('Belum ada sekolah. Buka Panel pemilik untuk mendaftar.'); }
+  if(isPemilik()) muatSemuaSekolah();
+});
+
+/* ── cari sekolah pengguna melalui collection group ─────────── */
+async function cariSekolah(emel){
+  const q=F.query(F.collectionGroup(fs,'pengguna'), F.where('emel','==',(emel||'').toLowerCase()));
+  const snap=await F.getDocs(q);
+  const senarai=[];
+  for(const d of snap.docs){
+    const sid=d.ref.parent.parent?.id;
+    if(!sid) continue;
+    senarai.push({id:sid, peranan:d.data().peranan||'guru', nama:sid});
+  }
+  return senarai;
+}
+
+/* ── tukar sekolah ──────────────────────────────────────────── */
+async function tukarSekolah(sid){
+  sidKini=sid;
+  const ahli=sekolahSaya.find(s=>s.id===sid);
+  peranan = isPemilik() ? 'pemilik' : (ahli?.peranan||'guru');
+  window.EZ.setPeranan(peranan, sekolahSaya.length);
+
+  let info={id:sid, nama:sid, aktif:true, tamat:null};
+  try{
+    const d=await F.getDoc(F.doc(fs,'sekolah',sid));
+    if(d.exists()){
+      const v=d.data();
+      info={id:sid, nama:v.nama||sid, aktif:v.aktif!==false, tamat:v.tamat?.toDate?.()?.toISOString()||null};
+      if(ahli) ahli.nama=info.nama;
+    }
+  }catch(e){ window.EZ.toast('Gagal muat maklumat sekolah: '+ringkas(e),'bad'); }
+  window.EZ.setSekolah(info);
+  window.EZ.lukisSekolahSaya(sekolahSaya, tukarSekolah);
+
+  await muatData();
+  if(peranan==='admin'||peranan==='pemilik') muatPengguna();
+}
+
+async function muatData(){
+  try{
+    const snap=await F.getDocs(F.collection(fs,'sekolah',sidKini,'kelas'));
+    const obj={};
+    snap.forEach(d=>{ const v=d.data(); if(v?.nama&&Array.isArray(v.murid)) obj[v.nama]=v.murid; });
+    window.EZ.muatKelas(obj);
+    if(!snap.size) window.EZ.toast('Senarai kelas sekolah ini masih kosong.');
+  }catch(e){ window.EZ.toast('Gagal muat senarai kelas: '+ringkas(e),'bad'); }
+  try{
+    const d=await F.getDoc(F.doc(fs,'sekolah',sidKini,'tetapan','telegram'));
+    window.EZ.muatTelegram(d.exists()?d.data():null);
+  }catch(e){ window.EZ.muatTelegram(null); }
+}
+
+/* ── pengguna sekolah ───────────────────────────────────────── */
+async function muatPengguna(){
+  try{
+    const snap=await F.getDocs(F.collection(fs,'sekolah',sidKini,'pengguna'));
+    const senarai=snap.docs.map(d=>({emel:d.id, ...d.data()}))
+      .sort((a,b)=>(a.peranan===b.peranan?a.emel.localeCompare(b.emel):a.peranan==='admin'?-1:1));
+    window.EZ.lukisPengguna(senarai, emelSaya());
+  }catch(e){ window.EZ.toast('Gagal muat senarai pengguna: '+ringkas(e),'bad'); }
+}
+window.EZfs={
+  async buangPengguna(emel){
+    if(!confirm('Buang '+emel+' daripada sekolah ini?')) return;
+    try{
+      await F.deleteDoc(F.doc(fs,'sekolah',sidKini,'pengguna',emel));
+      window.EZ.toast('Pengguna dibuang.','good'); muatPengguna();
+    }catch(e){ window.EZ.toast('Gagal buang: '+ringkas(e),'bad'); }
+  }
+};
+$('btnTambahGuru').addEventListener('click',async e=>{
+  const emel=$('emelBaru').value.trim().toLowerCase();
+  const per=$('peranBaru').value;
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emel)) return window.EZ.toast('Emel tidak sah.','bad');
+  const b=e.target; b.disabled=true; b.textContent='Menambah…';
+  try{
+    await F.setDoc(F.doc(fs,'sekolah',sidKini,'pengguna',emel),
+      {emel, peranan:per, ditambah:F.serverTimestamp(), oleh:emelSaya()});
+    $('emelBaru').value='';
+    window.EZ.toast(emel+' ditambah sebagai '+per+'.','good');
+    muatPengguna();
+  }catch(e2){ window.EZ.toast('Gagal tambah: '+ringkas(e2),'bad'); }
+  b.disabled=false; b.textContent='Tambah pengguna';
+});
+
+/* ── simpan tetapan & kelas ─────────────────────────────────── */
+$('btnSimpanTg').addEventListener('click',async e=>{
+  const b=e.target; b.disabled=true; b.textContent='Menyimpan…';
+  try{
+    const t=window.EZ.ambilTG();
+    await F.setDoc(F.doc(fs,'sekolah',sidKini,'tetapan','telegram'),
+      {...t, dikemas:F.serverTimestamp(), oleh:emelSaya()});
+    window.EZ.muatTelegram(t);
+    window.EZ.toast('Tetapan Telegram disimpan.','good');
+  }catch(e2){ window.EZ.toast('Gagal simpan: '+ringkas(e2),'bad'); }
+  b.disabled=false; b.textContent='Simpan ke Firebase';
+});
+
+$('btnSimpanKelas').addEventListener('click',async e=>{
+  const DB=window.EZ.ambilDB();
+  const keys=Object.keys(DB);
+  if(!keys.length) return window.EZ.toast('Tiada kelas untuk disimpan.','bad');
+  if(!confirm(`Simpan ${keys.length} kelas untuk sekolah ini? Senarai sedia ada akan diganti.`)) return;
+  const b=e.target; b.disabled=true; b.textContent='Menyimpan…';
+  try{
+    const rujuk=F.collection(fs,'sekolah',sidKini,'kelas');
+    const sedia=await F.getDocs(rujuk);
+    const baru=new Set(keys.map(slug));
+    let batch=F.writeBatch(fs), n=0;
+    const komit=async()=>{ if(n){ await batch.commit(); batch=F.writeBatch(fs); n=0; } };
+    for(const k of keys){
+      batch.set(F.doc(rujuk,slug(k)),{
+        nama:k, murid:DB[k], bil:DB[k].length,
+        dikemas:F.serverTimestamp(), oleh:emelSaya()
+      });
+      if(++n>=400) await komit();
+    }
+    sedia.forEach(d=>{ if(!baru.has(d.id)){ batch.delete(d.ref); n++; } });
+    await komit();
+    await F.setDoc(F.doc(fs,'sekolah',sidKini),{bilKelas:keys.length},{merge:true}).catch(()=>{});
+    window.EZ.toast(`${keys.length} kelas disimpan.`,'good');
+  }catch(e2){ window.EZ.toast('Gagal simpan: '+ringkas(e2),'bad'); }
+  b.disabled=false; b.textContent='Simpan semua kelas ke Firebase';
+});
+
+/* ── panel pemilik ──────────────────────────────────────────── */
+async function muatSemuaSekolah(){
+  if(!isPemilik()) return;
+  try{
+    const snap=await F.getDocs(F.collection(fs,'sekolah'));
+    const senarai=snap.docs.map(d=>{
+      const v=d.data();
+      return {id:d.id, nama:v.nama||d.id, aktif:v.aktif!==false,
+              tamat:v.tamat?.toDate?.()?.toISOString()||null, bilKelas:v.bilKelas};
+    }).sort((a,b)=>a.nama.localeCompare(b.nama));
+    window.EZ.lukisSemuaSekolah(senarai, uruskanSekolah);
+  }catch(e){ window.EZ.toast('Gagal muat senarai sekolah: '+ringkas(e),'bad'); }
+}
+$('btnMuatSekolah').addEventListener('click',muatSemuaSekolah);
+
+async function uruskanSekolah(sk){
+  const pilih=prompt(
+    `${sk.nama} (${sk.id})\n\n`+
+    `1 = Buka sekolah ini\n`+
+    `2 = ${sk.aktif?'Nyahaktifkan':'Aktifkan semula'}\n`+
+    `3 = Tukar tarikh tamat langganan\n`+
+    `4 = Tambah admin\n\nTaip nombor pilihan:`, '1');
+  if(!pilih) return;
+  try{
+    if(pilih==='1'){
+      if(!sekolahSaya.some(s=>s.id===sk.id)) sekolahSaya.push({id:sk.id,nama:sk.nama,peranan:'admin'});
+      document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
+      await tukarSekolah(sk.id);
+    }
+    else if(pilih==='2'){
+      await F.setDoc(F.doc(fs,'sekolah',sk.id),{aktif:!sk.aktif},{merge:true});
+      window.EZ.toast('Status sekolah dikemas kini.','good'); muatSemuaSekolah();
+      if(sk.id===sidKini) tukarSekolah(sidKini);
+    }
+    else if(pilih==='3'){
+      const t=prompt('Tarikh tamat baharu (YYYY-MM-DD). Kosongkan untuk tanpa had:', '');
+      if(t===null) return;
+      await F.setDoc(F.doc(fs,'sekolah',sk.id),
+        {tamat:t?F.Timestamp.fromDate(new Date(t+'T23:59:59')):null},{merge:true});
+      window.EZ.toast('Langganan dikemas kini.','good'); muatSemuaSekolah();
+      if(sk.id===sidKini) tukarSekolah(sidKini);
+    }
+    else if(pilih==='4'){
+      const emel=(prompt('Emel Google admin baharu:')||'').trim().toLowerCase();
+      if(!emel) return;
+      await F.setDoc(F.doc(fs,'sekolah',sk.id,'pengguna',emel),
+        {emel, peranan:'admin', ditambah:F.serverTimestamp(), oleh:emelSaya()});
+      window.EZ.toast(emel+' dilantik sebagai admin.','good');
+    }
+  }catch(e){ window.EZ.toast('Gagal: '+ringkas(e),'bad'); }
+}
+
+$('btnCiptaSekolah').addEventListener('click',async e=>{
+  const nama=$('sNama').value.trim();
+  const id=slug($('sId').value||nama);
+  const admin=$('sAdmin').value.trim().toLowerCase();
+  const tamat=$('sTamat').value;
+  if(!nama) return window.EZ.toast('Isi nama sekolah.','bad');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(admin)) return window.EZ.toast('Emel admin tidak sah.','bad');
+  const b=e.target; b.disabled=true; b.textContent='Mendaftar…';
+  try{
+    const ada=await F.getDoc(F.doc(fs,'sekolah',id));
+    if(ada.exists()) throw new Error('ID sekolah "'+id+'" sudah wujud.');
+    await F.setDoc(F.doc(fs,'sekolah',id),{
+      nama, aktif:true, bilKelas:0,
+      tamat: tamat?F.Timestamp.fromDate(new Date(tamat+'T23:59:59')):null,
+      dicipta:F.serverTimestamp(), oleh:emelSaya()
+    });
+    await F.setDoc(F.doc(fs,'sekolah',id,'pengguna',admin),
+      {emel:admin, peranan:'admin', ditambah:F.serverTimestamp(), oleh:emelSaya()});
+    $('sNama').value=''; $('sId').value=''; $('sAdmin').value=''; $('sTamat').value='';
+    delete $('sId').dataset.manual;
+    window.EZ.toast(nama+' didaftarkan. Pautan: ?s='+id,'good');
+    muatSemuaSekolah();
+  }catch(e2){ window.EZ.toast('Gagal daftar: '+ringkas(e2),'bad'); }
+  b.disabled=false; b.textContent='Daftar sekolah';
+});
+
+/* ── log masuk / keluar ─────────────────────────────────────── */
+btn.addEventListener('click',async()=>{
+  btn.disabled=true; err.textContent='';
+  try{ await A.signInWithPopup(auth,provider); }
+  catch(e){
+    const c=e.code||'';
+    if(c.includes('popup')||c.includes('operation-not-supported')){
+      try{ await A.signInWithRedirect(auth,provider); }catch(e2){ gagal(mesej(e2)); }
+    } else gagal(mesej(e));
+  }
+});
+$('btnKeluar').addEventListener('click',async()=>{
+  if(!confirm('Log keluar dari '+CONFIG.JENAMA+'?')) return;
+  document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
+  await A.signOut(auth);
+});
+
+function ringkas(e){
+  const c=e?.code||'';
+  if(c.includes('permission-denied')) return 'tiada kebenaran untuk data ini';
+  if(c.includes('unavailable')) return 'tiada sambungan internet';
+  if(c.includes('failed-precondition')) return 'indeks Firestore diperlukan, buka pautan dalam Console';
+  return e?.message||c||'ralat tidak diketahui';
+}
+function mesej(e){
+  const c=e?.code||'';
+  if(c.includes('unauthorized-domain')) return 'Domain laman ini belum didaftarkan dalam Firebase → Authentication → Settings → Authorized domains.';
+  if(c.includes('network')) return 'Tiada sambungan internet.';
+  if(c.includes('cancelled')||c.includes('closed-by-user')) return '';
+  return 'Log masuk gagal: '+(e?.message||c);
+}
+</script>
+</body>
+</html>

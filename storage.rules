@@ -1,0 +1,12 @@
+rules_version = '2';
+
+/* EZ-HADIR tidak menggunakan Cloud Storage.
+   Rules ini menutup terus akses supaya tiada kebocoran. */
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
