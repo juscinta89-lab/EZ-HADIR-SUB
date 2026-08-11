@@ -4,44 +4,41 @@ rules_version = '2';
    EZ-HADIR — Firestore Security Rules (berbilang sekolah)
 
    SEBELUM PUBLISH: tukar emel dalam fungsi pemilik() kepada emel
-   anda sendiri. Ia mesti sama dengan CONFIG.PEMILIK dalam index.html.
+   anda. Ia mesti sama dengan CONFIG.PEMILIK dalam index.html.
+
+   Tiada indeks manual diperlukan oleh rules ini.
 
    Peranan:
    • Pemilik produk  → semua sekolah, cipta dan tamatkan langganan
    • Admin sekolah   → data sekolah sendiri sahaja, baca dan tulis
    • Guru            → data sekolah sendiri sahaja, baca sahaja
    • Orang lain      → tiada akses
-
-   Sekolah A tidak boleh membaca data sekolah B kerana setiap
-   pemeriksaan bergantung pada keahlian di bawah sekolah itu sendiri.
    ══════════════════════════════════════════════════════════════ */
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function masuk() {
-      return request.auth != null
-          && request.auth.token.email != null
-          && request.auth.token.email_verified == true;
+      return request.auth != null && request.auth.token.email != null;
     }
     function emel() { return request.auth.token.email.lower(); }
 
     // GANTI dengan emel anda
     function pemilik() {
       return masuk() && emel() in [
-        'g-45275576@moe-dl.edu.my'
+        'juscinta89@gmail.com'
       ];
     }
 
-    function keahlian(sid) {
-      return get(/databases/$(database)/documents/sekolah/$(sid)/pengguna/$(emel()));
+    // Baris pendaftaran pengguna yang sedang log masuk
+    function saya() {
+      return get(/databases/$(database)/documents/pengguna/$(emel())).data;
     }
-    function ahli(sid) {
-      return masuk() && exists(/databases/$(database)/documents/sekolah/$(sid)/pengguna/$(emel()));
+    function berdaftar() {
+      return masuk() && exists(/databases/$(database)/documents/pengguna/$(emel()));
     }
-    function adminSekolah(sid) {
-      return ahli(sid) && keahlian(sid).data.peranan == 'admin';
-    }
+    function ahli(sid)  { return berdaftar() && saya().sid == sid; }
+    function adminSekolah(sid) { return ahli(sid) && saya().peranan == 'admin'; }
 
     // Langganan: sekolah mesti aktif dan belum tamat
     function sekolahHidup(sid) {
@@ -50,8 +47,27 @@ service cloud.firestore {
           && (!('tamat' in s) || s.tamat == null || request.time < s.tamat);
     }
 
+    /* ── pendaftaran pengguna ──────────────────────────────── */
+    match /pengguna/{emelPengguna} {
+      // seorang boleh baca barisnya sendiri; admin boleh baca
+      // baris sekolahnya; pemilik boleh baca semua
+      allow read: if masuk() && (
+                       emelPengguna == emel()
+                    || pemilik()
+                    || adminSekolah(resource.data.sid)
+                  );
+
+      allow create, update: if masuk()
+                    && request.resource.data.emel == emelPengguna
+                    && request.resource.data.peranan in ['admin','guru']
+                    && (pemilik() || adminSekolah(request.resource.data.sid));
+
+      allow delete: if masuk() && (pemilik() || adminSekolah(resource.data.sid));
+    }
+
+    /* ── sekolah dan datanya ───────────────────────────────── */
     match /sekolah/{sid} {
-      // maklumat sekolah boleh dibaca ahli walaupun langganan tamat,
+      // maklumat asas boleh dibaca ahli walaupun langganan tamat,
       // supaya app boleh papar sebab akses disekat
       allow read:   if ahli(sid) || pemilik();
       allow create, delete: if pemilik();
@@ -61,34 +77,19 @@ service cloud.firestore {
                         && request.resource.data.diff(resource.data).affectedKeys()
                              .hasOnly(['bilKelas']));
 
-      match /pengguna/{emelPengguna} {
-        allow read:   if ahli(sid) || pemilik();
-        allow create, update: if (adminSekolah(sid) || pemilik())
-                    && request.resource.data.peranan in ['admin','guru']
-                    && request.resource.data.emel == emelPengguna;
-        allow delete: if adminSekolah(sid) || pemilik();
-      }
-
       match /kelas/{kelasId} {
-        allow read:  if ahli(sid) && (sekolahHidup(sid) || pemilik());
-        allow write: if (adminSekolah(sid) || pemilik())
-                     && sekolahHidup(sid)
-                     && request.resource.data.nama is string
-                     && request.resource.data.murid is list
-                     && request.resource.data.murid.size() <= 300;
-        allow delete: if adminSekolah(sid) || pemilik();
+        allow read:   if pemilik() || (ahli(sid) && sekolahHidup(sid));
+        allow write:  if (pemilik() || (adminSekolah(sid) && sekolahHidup(sid)))
+                      && request.resource.data.nama is string
+                      && request.resource.data.murid is list
+                      && request.resource.data.murid.size() <= 300;
+        allow delete: if pemilik() || adminSekolah(sid);
       }
 
       match /tetapan/{docId} {
-        allow read:  if ahli(sid) && (sekolahHidup(sid) || pemilik());
-        allow write: if (adminSekolah(sid) || pemilik()) && sekolahHidup(sid);
+        allow read:  if pemilik() || (ahli(sid) && sekolahHidup(sid));
+        allow write: if pemilik() || (adminSekolah(sid) && sekolahHidup(sid));
       }
-    }
-
-    // Membolehkan app mencari sekolah pengguna sendiri.
-    // Setiap orang hanya nampak baris keahlian miliknya.
-    match /{path=**}/pengguna/{emelPengguna} {
-      allow read: if masuk() && resource.data.emel == emel();
     }
 
     match /{document=**} {

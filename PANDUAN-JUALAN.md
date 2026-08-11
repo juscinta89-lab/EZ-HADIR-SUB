@@ -6,6 +6,12 @@ Satu pemasangan, banyak sekolah. Setiap sekolah hanya nampak datanya sendiri.
 
 ## A. Pemasangan sekali sahaja
 
+> **Penting:** app mesti dibuka melalui alamat `http://` atau `https://`.
+> Membuka fail `index.html` terus dari komputer (`file://`) menyebabkan butang
+> log masuk tidak berfungsi, kerana Firebase menolak asal `file://`.
+> Untuk uji di komputer: buka folder itu dalam Terminal, jalankan
+> `python -m http.server 8000`, kemudian layari `http://localhost:8000`.
+
 **1. Firebase**
 - Authentication → Sign-in method → aktifkan **Google**
 - Authentication → Settings → Authorized domains → tambah domain hosting anda
@@ -14,15 +20,12 @@ Satu pemasangan, banyak sekolah. Setiap sekolah hanya nampak datanya sendiri.
 - Storage → Rules → tampal isi `storage.rules` → Publish
 
 **2. Tukar emel pemilik di DUA tempat**
-- `index.html` → `CONFIG.PEMILIK`
+- `index.html` → `CONFIG.PEMILIK` (kini `juscinta89@gmail.com`)
 - `firestore.rules` → fungsi `pemilik()`
 
 Kedua-duanya mesti sama. Yang dalam rules ialah kunci sebenar; yang dalam index.html cuma menentukan butang mana muncul.
 
-**3. Indeks Firestore**
-Kali pertama seseorang log masuk, Firestore mungkin minta satu indeks untuk `collectionGroup('pengguna')`. Buka pautan dalam mesej ralat di Console pelayar, tekan Create Index, tunggu seminit. Cukup sekali untuk semua sekolah.
-
-**4. Hosting**
+**3. Hosting**
 Upload ketujuh-tujuh fail ke root repo GitHub Pages, atau `firebase deploy --only hosting`.
 
 ---
@@ -67,15 +70,18 @@ Bila langganan tamat atau sekolah dinyahaktifkan, Firestore rules menyekat bacaa
 ## D. Cara data dipisahkan
 
 ```
+pengguna/cikgu@moe-dl.edu.my    { sid: "sk-belukar", peranan: "guru" }
+
 sekolah/sk-belukar/
-   ├─ pengguna/{emel}    peranan: admin | guru
    ├─ kelas/{id}         nama kelas + senarai murid
    └─ tetapan/telegram   token bot + chat id
 sekolah/sk-cherang/
    └─ ... (berasingan sepenuhnya)
 ```
 
-Setiap kebenaran disemak terhadap dokumen `pengguna` di bawah sekolah itu sendiri. Guru SK Belukar tiada baris keahlian dalam SK Cherang, jadi permintaan ke data SK Cherang ditolak oleh pelayan Firestore, bukan sekadar disembunyikan dalam app.
+Setiap kebenaran disemak terhadap baris `pengguna` milik orang yang log masuk. Guru SK Belukar mempunyai `sid: "sk-belukar"`, jadi permintaan ke data SK Cherang ditolak oleh pelayan Firestore, bukan sekadar disembunyikan dalam app.
+
+Satu emel = satu sekolah. Kalau seseorang berpindah sekolah, admin sekolah baharu tambah emelnya semula dan baris lama ditulis ganti.
 
 Setiap sekolah guna bot Telegram sendiri. Token satu sekolah tidak boleh dibaca sekolah lain.
 

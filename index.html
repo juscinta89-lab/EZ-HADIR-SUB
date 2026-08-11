@@ -23,122 +23,25 @@
    EZ-HADIR — tetapan pemasangan (satu fail untuk semua sekolah)
    Data setiap sekolah terasing sepenuhnya dalam Firestore.
    ══════════════════════════════════════════════════════════════ */
-const CONFIG = {
+window.CONFIG = {
   FIREBASE: {
-  apiKey: "AIzaSyDUYbamgSKQo0TPDQnFq7r97mFVKL2tm4s",
-  authDomain: "ez-hadir-subscribe.firebaseapp.com",
-  projectId: "ez-hadir-subscribe",
-  storageBucket: "ez-hadir-subscribe.firebasestorage.app",
-  messagingSenderId: "127845537280",
-  appId: "1:127845537280:web:96efbe9782dcd3cb0faae5",
-  measurementId: "G-2LLHY0CCQG"
-};
+    apiKey:            "AIzaSyBQyQyzrrYua5VTEIWrtwCOZz7UGQz5qVI",
+    authDomain:        "ez-hadir.firebaseapp.com",
+    projectId:         "ez-hadir",
+    storageBucket:     "ez-hadir.firebasestorage.app",
+    messagingSenderId: "198348021865",
+    appId:             "1:198348021865:web:e5a167e59188979c86c2f8"
+  },
 
   /* Emel PEMILIK produk (anda). Boleh cipta sekolah baharu,
      tetapkan langganan, dan lantik admin pertama setiap sekolah.
      Mesti sama dengan senarai dalam firestore.rules. */
-  PEMILIK: ["rules_version = '2';
-
-/* ══════════════════════════════════════════════════════════════
-   EZ-HADIR — Firestore Security Rules (berbilang sekolah)
-
-   SEBELUM PUBLISH: tukar emel dalam fungsi pemilik() kepada emel
-   anda sendiri. Ia mesti sama dengan CONFIG.PEMILIK dalam index.html.
-
-   Peranan:
-   • Pemilik produk  → semua sekolah, cipta dan tamatkan langganan
-   • Admin sekolah   → data sekolah sendiri sahaja, baca dan tulis
-   • Guru            → data sekolah sendiri sahaja, baca sahaja
-   • Orang lain      → tiada akses
-
-   Sekolah A tidak boleh membaca data sekolah B kerana setiap
-   pemeriksaan bergantung pada keahlian di bawah sekolah itu sendiri.
-   ══════════════════════════════════════════════════════════════ */
-
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    function masuk() {
-      return request.auth != null
-          && request.auth.token.email != null
-          && request.auth.token.email_verified == true;
-    }
-    function emel() { return request.auth.token.email.lower(); }
-
-    // GANTI dengan emel anda
-    function pemilik() {
-      return masuk() && emel() in [
-        'g-45275576@moe-dl.edu.my'
-      ];
-    }
-
-    function keahlian(sid) {
-      return get(/databases/$(database)/documents/sekolah/$(sid)/pengguna/$(emel()));
-    }
-    function ahli(sid) {
-      return masuk() && exists(/databases/$(database)/documents/sekolah/$(sid)/pengguna/$(emel()));
-    }
-    function adminSekolah(sid) {
-      return ahli(sid) && keahlian(sid).data.peranan == 'admin';
-    }
-
-    // Langganan: sekolah mesti aktif dan belum tamat
-    function sekolahHidup(sid) {
-      let s = get(/databases/$(database)/documents/sekolah/$(sid)).data;
-      return s.aktif == true
-          && (!('tamat' in s) || s.tamat == null || request.time < s.tamat);
-    }
-
-    match /sekolah/{sid} {
-      // maklumat sekolah boleh dibaca ahli walaupun langganan tamat,
-      // supaya app boleh papar sebab akses disekat
-      allow read:   if ahli(sid) || pemilik();
-      allow create, delete: if pemilik();
-      // admin hanya boleh kemas kini kiraan kelas, bukan status langganan
-      allow update: if pemilik()
-                    || (adminSekolah(sid)
-                        && request.resource.data.diff(resource.data).affectedKeys()
-                             .hasOnly(['bilKelas']));
-
-      match /pengguna/{emelPengguna} {
-        allow read:   if ahli(sid) || pemilik();
-        allow create, update: if (adminSekolah(sid) || pemilik())
-                    && request.resource.data.peranan in ['admin','guru']
-                    && request.resource.data.emel == emelPengguna;
-        allow delete: if adminSekolah(sid) || pemilik();
-      }
-
-      match /kelas/{kelasId} {
-        allow read:  if ahli(sid) && (sekolahHidup(sid) || pemilik());
-        allow write: if (adminSekolah(sid) || pemilik())
-                     && sekolahHidup(sid)
-                     && request.resource.data.nama is string
-                     && request.resource.data.murid is list
-                     && request.resource.data.murid.size() <= 300;
-        allow delete: if adminSekolah(sid) || pemilik();
-      }
-
-      match /tetapan/{docId} {
-        allow read:  if ahli(sid) && (sekolahHidup(sid) || pemilik());
-        allow write: if (adminSekolah(sid) || pemilik()) && sekolahHidup(sid);
-      }
-    }
-
-    // Membolehkan app mencari sekolah pengguna sendiri.
-    // Setiap orang hanya nampak baris keahlian miliknya.
-    match /{path=**}/pengguna/{emelPengguna} {
-      allow read: if masuk() && resource.data.emel == emel();
-    }
-
-    match /{document=**} {
-      allow read, write: if false;
-    }
-  }
-}"],
+  PEMILIK: ["juscinta89@gmail.com"],
 
   /* Nama produk untuk paparan dan invois */
   JENAMA: "EZ-HADIR"
 };
+const CONFIG = window.CONFIG;
 </script>
 <style>
 /* ── token warna: diambil dari logo EZ-HADIR ───────────────── */
@@ -1178,19 +1081,74 @@ init();
 /* ══════════════════════════════════════════════════════════════
    EZ-HADIR — log masuk Google + data berbilang sekolah
 
-   Struktur Firestore (setiap sekolah terasing sepenuhnya):
+   Struktur Firestore (tiada indeks manual diperlukan):
+     pengguna/{emel}                   sid, peranan: admin | guru
      sekolah/{sid}                     nama, aktif, tamat
-     sekolah/{sid}/pengguna/{emel}     peranan: admin | guru
      sekolah/{sid}/kelas/{kelasId}     nama, murid[]
      sekolah/{sid}/tetapan/telegram    botToken, chatId, mono
    ══════════════════════════════════════════════════════════════ */
 const $=id=>document.getElementById(id);
 const gate=$('gate'), err=$('gateErr'), note=$('gateNote'), btn=$('btnGoogle');
+const CONFIG=window.CONFIG;
 
-const V='https://www.gstatic.com/firebasejs/11.0.2/';
-const [{initializeApp}, A, F] = await Promise.all([
-  import(V+'firebase-app.js'), import(V+'firebase-auth.js'), import(V+'firebase-firestore.js')
-]);
+const gagal=m=>{ err.textContent=m; btn.disabled=false; btn.textContent='Log masuk dengan Google'; };
+
+/* Pendengar butang dipasang DAHULU supaya butang sentiasa bertindak,
+   walaupun pustaka Firebase gagal dimuatkan. */
+let mulaLogMasuk=null;
+btn.addEventListener('click',()=>{
+  if(mulaLogMasuk) return mulaLogMasuk();
+  gagal(status.gagal || 'Sistem log masuk masih dimuatkan. Tunggu sebentar dan cuba lagi.');
+});
+const status={gagal:''};
+
+/* Amaran awal untuk punca paling biasa */
+if(location.protocol==='file:'){
+  status.gagal='App ini tidak boleh dibuka terus dari fail komputer. Ia mesti dibuka melalui alamat http/https — upload ke GitHub Pages, atau jalankan "python -m http.server" dan buka http://localhost:8000';
+  note.textContent='Buka melalui alamat http/https, bukan fail tempatan.';
+  err.textContent=status.gagal;
+}
+
+/* Papar sebarang ralat modul kepada pengguna, bukan hanya Console */
+window.addEventListener('unhandledrejection',e=>{
+  const t=String(e.reason?.message||e.reason||'');
+  if(t.includes('import')||t.includes('Firebase')||t.includes('firebase')){
+    status.gagal='Gagal memuatkan pustaka Firebase: '+t;
+    err.textContent=status.gagal;
+  }
+});
+
+/* ── muat pustaka Firebase, dengan sumber ganti ─────────────── */
+async function muatFirebase(){
+  const sumber=[
+    'https://www.gstatic.com/firebasejs/11.0.2/',
+    'https://esm.sh/firebase@11.0.2/'
+  ];
+  let ralat;
+  for(const asas of sumber){
+    try{
+      const [app,auth,store]=await Promise.all([
+        import(asas+(asas.includes('esm.sh')?'app':'firebase-app.js')),
+        import(asas+(asas.includes('esm.sh')?'auth':'firebase-auth.js')),
+        import(asas+(asas.includes('esm.sh')?'firestore':'firebase-firestore.js'))
+      ]);
+      return [app,auth,store];
+    }catch(e){ ralat=e; }
+  }
+  throw ralat||new Error('tidak dapat dimuatkan');
+}
+
+let initializeApp,A,F;
+try{
+  btn.textContent='Menyambung…'; btn.disabled=true;
+  const [mApp,mAuth,mStore]=await muatFirebase();
+  initializeApp=mApp.initializeApp; A=mAuth; F=mStore;
+  btn.textContent='Log masuk dengan Google'; btn.disabled=false;
+}catch(e){
+  status.gagal='Gagal memuatkan pustaka Firebase. Semak sambungan internet atau sekatan rangkaian sekolah. ('+(e?.message||e)+')';
+  gagal(status.gagal);
+  throw e;
+}
 
 const app=initializeApp(CONFIG.FIREBASE);
 const auth=A.getAuth(app);
@@ -1208,12 +1166,10 @@ const pemilikSenarai=(CONFIG.PEMILIK||[]).map(e=>e.toLowerCase()).filter(Boolean
 const emelSaya=()=>(auth.currentUser?.email||'').toLowerCase();
 const isPemilik=()=>pemilikSenarai.includes(emelSaya());
 const slug=s=>String(s).trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,120)||'kelas';
-const hariIni=()=>new Date();
 
 let sekolahSaya=[], sidKini='', peranan='guru';
 
-note.textContent='Akaun anda perlu didaftarkan oleh admin sekolah terlebih dahulu.';
-const gagal=m=>{ err.textContent=m; btn.disabled=false; };
+if(!status.gagal) note.textContent='Akaun anda perlu didaftarkan oleh admin sekolah terlebih dahulu.';
 
 await A.getRedirectResult(auth).catch(e=>gagal(mesej(e)));
 
@@ -1226,39 +1182,44 @@ A.onAuthStateChanged(auth, async u=>{
     return;
   }
   window.EZ.tunjukPengguna(u);
-  try{
-    sekolahSaya=await cariSekolah(u.email);
-  }catch(e){ gagal('Gagal menyemak keahlian: '+ringkas(e)); return; }
 
-  if(!sekolahSaya.length && !isPemilik()){
+  try{
+    if(isPemilik()){
+      const semua=await senaraiSemuaSekolah();
+      sekolahSaya=semua.map(s=>({id:s.id,nama:s.nama,peranan:'pemilik'}));
+      window.EZ.lukisSemuaSekolah(semua, uruskanSekolah);
+    }else{
+      const d=await F.getDoc(F.doc(fs,'pengguna',emelSaya()));
+      sekolahSaya = d.exists() && d.data().sid
+        ? [{id:d.data().sid, nama:d.data().sid, peranan:d.data().peranan||'guru'}]
+        : [];
+    }
+  }catch(e){
+    gagal('Gagal menyemak pendaftaran: '+ringkas(e));
+    return;
+  }
+
+  if(!sekolahSaya.length){
+    if(isPemilik()){
+      window.EZ.buka(); err.textContent='';
+      window.EZ.setPeranan('pemilik',0);
+      window.EZ.setSekolah(null);
+      $('sheetPemilik').classList.add('open');
+      window.EZ.toast('Belum ada sekolah. Daftarkan sekolah pertama.');
+      return;
+    }
     await A.signOut(auth);
-    gagal('Akaun '+u.email+' belum didaftarkan pada mana-mana sekolah. Berikan emel ini kepada admin sekolah anda.');
+    gagal('Akaun '+u.email+' belum didaftarkan. Berikan emel ini kepada admin sekolah anda.');
     return;
   }
 
   const dari=new URLSearchParams(location.search).get('s');
-  const pilihan = (dari && (sekolahSaya.some(s=>s.id===dari) || isPemilik())) ? dari
-                : (sekolahSaya[0]?.id || '');
+  const pilihan = (dari && sekolahSaya.some(s=>s.id===dari)) ? dari : sekolahSaya[0].id;
 
   window.EZ.buka(); err.textContent='';
   window.EZ.lukisSekolahSaya(sekolahSaya, tukarSekolah);
-  if(pilihan) await tukarSekolah(pilihan);
-  else { window.EZ.setPeranan('pemilik',0); window.EZ.toast('Belum ada sekolah. Buka Panel pemilik untuk mendaftar.'); }
-  if(isPemilik()) muatSemuaSekolah();
+  await tukarSekolah(pilihan);
 });
-
-/* ── cari sekolah pengguna melalui collection group ─────────── */
-async function cariSekolah(emel){
-  const q=F.query(F.collectionGroup(fs,'pengguna'), F.where('emel','==',(emel||'').toLowerCase()));
-  const snap=await F.getDocs(q);
-  const senarai=[];
-  for(const d of snap.docs){
-    const sid=d.ref.parent.parent?.id;
-    if(!sid) continue;
-    senarai.push({id:sid, peranan:d.data().peranan||'guru', nama:sid});
-  }
-  return senarai;
-}
 
 /* ── tukar sekolah ──────────────────────────────────────────── */
 async function tukarSekolah(sid){
@@ -1300,7 +1261,8 @@ async function muatData(){
 /* ── pengguna sekolah ───────────────────────────────────────── */
 async function muatPengguna(){
   try{
-    const snap=await F.getDocs(F.collection(fs,'sekolah',sidKini,'pengguna'));
+    const q=F.query(F.collection(fs,'pengguna'), F.where('sid','==',sidKini));
+    const snap=await F.getDocs(q);
     const senarai=snap.docs.map(d=>({emel:d.id, ...d.data()}))
       .sort((a,b)=>(a.peranan===b.peranan?a.emel.localeCompare(b.emel):a.peranan==='admin'?-1:1));
     window.EZ.lukisPengguna(senarai, emelSaya());
@@ -1310,7 +1272,7 @@ window.EZfs={
   async buangPengguna(emel){
     if(!confirm('Buang '+emel+' daripada sekolah ini?')) return;
     try{
-      await F.deleteDoc(F.doc(fs,'sekolah',sidKini,'pengguna',emel));
+      await F.deleteDoc(F.doc(fs,'pengguna',emel));
       window.EZ.toast('Pengguna dibuang.','good'); muatPengguna();
     }catch(e){ window.EZ.toast('Gagal buang: '+ringkas(e),'bad'); }
   }
@@ -1321,8 +1283,8 @@ $('btnTambahGuru').addEventListener('click',async e=>{
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emel)) return window.EZ.toast('Emel tidak sah.','bad');
   const b=e.target; b.disabled=true; b.textContent='Menambah…';
   try{
-    await F.setDoc(F.doc(fs,'sekolah',sidKini,'pengguna',emel),
-      {emel, peranan:per, ditambah:F.serverTimestamp(), oleh:emelSaya()});
+    await F.setDoc(F.doc(fs,'pengguna',emel),
+      {emel, sid:sidKini, peranan:per, ditambah:F.serverTimestamp(), oleh:emelSaya()});
     $('emelBaru').value='';
     window.EZ.toast(emel+' ditambah sebagai '+per+'.','good');
     muatPengguna();
@@ -1346,6 +1308,7 @@ $('btnSimpanTg').addEventListener('click',async e=>{
 $('btnSimpanKelas').addEventListener('click',async e=>{
   const DB=window.EZ.ambilDB();
   const keys=Object.keys(DB);
+  if(!sidKini) return window.EZ.toast('Pilih sekolah dahulu.','bad');
   if(!keys.length) return window.EZ.toast('Tiada kelas untuk disimpan.','bad');
   if(!confirm(`Simpan ${keys.length} kelas untuk sekolah ini? Senarai sedia ada akan diganti.`)) return;
   const b=e.target; b.disabled=true; b.textContent='Menyimpan…';
@@ -1371,16 +1334,21 @@ $('btnSimpanKelas').addEventListener('click',async e=>{
 });
 
 /* ── panel pemilik ──────────────────────────────────────────── */
+async function senaraiSemuaSekolah(){
+  const snap=await F.getDocs(F.collection(fs,'sekolah'));
+  return snap.docs.map(d=>{
+    const v=d.data();
+    return {id:d.id, nama:v.nama||d.id, aktif:v.aktif!==false,
+            tamat:v.tamat?.toDate?.()?.toISOString()||null, bilKelas:v.bilKelas};
+  }).sort((a,b)=>a.nama.localeCompare(b.nama));
+}
 async function muatSemuaSekolah(){
   if(!isPemilik()) return;
   try{
-    const snap=await F.getDocs(F.collection(fs,'sekolah'));
-    const senarai=snap.docs.map(d=>{
-      const v=d.data();
-      return {id:d.id, nama:v.nama||d.id, aktif:v.aktif!==false,
-              tamat:v.tamat?.toDate?.()?.toISOString()||null, bilKelas:v.bilKelas};
-    }).sort((a,b)=>a.nama.localeCompare(b.nama));
-    window.EZ.lukisSemuaSekolah(senarai, uruskanSekolah);
+    const semua=await senaraiSemuaSekolah();
+    sekolahSaya=semua.map(s=>({id:s.id,nama:s.nama,peranan:'pemilik'}));
+    window.EZ.lukisSemuaSekolah(semua, uruskanSekolah);
+    window.EZ.lukisSekolahSaya(sekolahSaya, tukarSekolah);
   }catch(e){ window.EZ.toast('Gagal muat senarai sekolah: '+ringkas(e),'bad'); }
 }
 $('btnMuatSekolah').addEventListener('click',muatSemuaSekolah);
@@ -1395,7 +1363,6 @@ async function uruskanSekolah(sk){
   if(!pilih) return;
   try{
     if(pilih==='1'){
-      if(!sekolahSaya.some(s=>s.id===sk.id)) sekolahSaya.push({id:sk.id,nama:sk.nama,peranan:'admin'});
       document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
       await tukarSekolah(sk.id);
     }
@@ -1415,9 +1382,9 @@ async function uruskanSekolah(sk){
     else if(pilih==='4'){
       const emel=(prompt('Emel Google admin baharu:')||'').trim().toLowerCase();
       if(!emel) return;
-      await F.setDoc(F.doc(fs,'sekolah',sk.id,'pengguna',emel),
-        {emel, peranan:'admin', ditambah:F.serverTimestamp(), oleh:emelSaya()});
-      window.EZ.toast(emel+' dilantik sebagai admin.','good');
+      await F.setDoc(F.doc(fs,'pengguna',emel),
+        {emel, sid:sk.id, peranan:'admin', ditambah:F.serverTimestamp(), oleh:emelSaya()});
+      window.EZ.toast(emel+' dilantik sebagai admin '+sk.nama+'.','good');
     }
   }catch(e){ window.EZ.toast('Gagal: '+ringkas(e),'bad'); }
 }
@@ -1438,27 +1405,29 @@ $('btnCiptaSekolah').addEventListener('click',async e=>{
       tamat: tamat?F.Timestamp.fromDate(new Date(tamat+'T23:59:59')):null,
       dicipta:F.serverTimestamp(), oleh:emelSaya()
     });
-    await F.setDoc(F.doc(fs,'sekolah',id,'pengguna',admin),
-      {emel:admin, peranan:'admin', ditambah:F.serverTimestamp(), oleh:emelSaya()});
+    await F.setDoc(F.doc(fs,'pengguna',admin),
+      {emel:admin, sid:id, peranan:'admin', ditambah:F.serverTimestamp(), oleh:emelSaya()});
     $('sNama').value=''; $('sId').value=''; $('sAdmin').value=''; $('sTamat').value='';
     delete $('sId').dataset.manual;
     window.EZ.toast(nama+' didaftarkan. Pautan: ?s='+id,'good');
-    muatSemuaSekolah();
+    await muatSemuaSekolah();
+    if(!sidKini) await tukarSekolah(id);
   }catch(e2){ window.EZ.toast('Gagal daftar: '+ringkas(e2),'bad'); }
   b.disabled=false; b.textContent='Daftar sekolah';
 });
 
 /* ── log masuk / keluar ─────────────────────────────────────── */
-btn.addEventListener('click',async()=>{
+mulaLogMasuk=async()=>{
   btn.disabled=true; err.textContent='';
   try{ await A.signInWithPopup(auth,provider); }
   catch(e){
     const c=e.code||'';
-    if(c.includes('popup')||c.includes('operation-not-supported')){
+    if(c.includes('popup')||c.includes('operation-not-supported')||c.includes('cancelled-popup')){
       try{ await A.signInWithRedirect(auth,provider); }catch(e2){ gagal(mesej(e2)); }
     } else gagal(mesej(e));
   }
-});
+  btn.disabled=false;
+};
 $('btnKeluar').addEventListener('click',async()=>{
   if(!confirm('Log keluar dari '+CONFIG.JENAMA+'?')) return;
   document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
@@ -1467,9 +1436,8 @@ $('btnKeluar').addEventListener('click',async()=>{
 
 function ringkas(e){
   const c=e?.code||'';
-  if(c.includes('permission-denied')) return 'tiada kebenaran untuk data ini';
+  if(c.includes('permission-denied')) return 'tiada kebenaran. Pastikan firestore.rules terkini sudah di-Publish';
   if(c.includes('unavailable')) return 'tiada sambungan internet';
-  if(c.includes('failed-precondition')) return 'indeks Firestore diperlukan, buka pautan dalam Console';
   return e?.message||c||'ralat tidak diketahui';
 }
 function mesej(e){
