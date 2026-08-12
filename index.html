@@ -42,7 +42,7 @@ window.CONFIG = {
      Cloud Messaging → Web Push certificates → Generate key pair).
      Biarkan kosong jika Cloud Functions belum dipasang — app akan
      guna peringatan tempatan sebagai ganti. */
-  VAPID: "BBV-mqCUOBu3VzHePqk7zOtBqtDPovw5QgvU0lJalIHcjXqdrVt1vXJDRRKjrfSDZQDYSgEAxo8Rg5QLfNbkoyo",
+  VAPID: "",
 
   /* Nama produk untuk paparan dan invois */
   JENAMA: "EZ-HADIR"
@@ -619,6 +619,27 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
       <button class="utama" id="btnSimpanTg">Simpan ke Firebase</button>
       <button class="kedua" id="btnTest">Semak sambungan</button>
       <p class="hint">Token disimpan dalam Firestore, bukan dalam fail app.</p>
+
+      <p class="tajuk-kecil" style="margin-top:24px">Waktu peringatan</p>
+      <div class="two">
+        <div>
+          <label for="jamPagi">Ingatan guru</label>
+          <div class="sel">
+            <select id="jamPagi"></select>
+            <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+        </div>
+        <div>
+          <label for="jamSemak">Semakan admin</label>
+          <div class="sel">
+            <select id="jamSemak"></select>
+            <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="peringatanAktif" checked> Hidupkan peringatan untuk sekolah ini</label>
+      <button class="utama" id="btnSimpanJam">Simpan waktu peringatan</button>
+      <p class="hint">Waktu Malaysia, Isnin hingga Jumaat sahaja. Ingatan guru dihantar kepada semua guru; semakan admin menyenaraikan kelas yang belum lapor.</p>
     </div>
 
     <div class="pane" id="p2">
@@ -1308,6 +1329,29 @@ $('btnPeringatan').addEventListener('click',async()=>{
   if(modPeringatan!=='tutup'){
     if(modPeringatan==='awan') await window.EZfs?.matikanTolak?.();
     modPeringatan='tutup'; jadualTempatan(); window.EZ.setPeringatan('tutup');
+
+/* isi pilihan jam 6 pagi hingga 1 petang */
+(function isiJam(){
+  [['jamPagi',7],['jamSemak',10]].forEach(([id,lalai])=>{
+    const s=$(id);
+    for(let j=6;j<=13;j++){
+      const o=document.createElement('option');
+      o.value=j; o.textContent=(j>12?(j-12):j)+':30 '+(j>=12?'petang':'pagi');
+      s.appendChild(o);
+    }
+    s.value=lalai;
+  });
+})();
+window.EZ.muatJam=function(t){
+  $('jamPagi').value  = t?.jamPagi  ?? 7;
+  $('jamSemak').value = t?.jamSemak ?? 10;
+  $('peringatanAktif').checked = t?.aktif !== false;
+};
+window.EZ.ambilJam=()=>({
+  jamPagi:  parseInt($('jamPagi').value,10),
+  jamSemak: parseInt($('jamSemak').value,10),
+  aktif:    $('peringatanAktif').checked
+});
     return toast('Peringatan dimatikan.');
   }
   if(!await mintaIzin()) return;
@@ -1328,6 +1372,29 @@ $('btnPeringatan').addEventListener('click',async()=>{
   toast('Peringatan tempatan pada '+jam+':00 pagi. Berfungsi selagi app dalam ingatan telefon.','good');
 });
 window.EZ.setPeringatan('tutup');
+
+/* isi pilihan jam 6 pagi hingga 1 petang */
+(function isiJam(){
+  [['jamPagi',7],['jamSemak',10]].forEach(([id,lalai])=>{
+    const s=$(id);
+    for(let j=6;j<=13;j++){
+      const o=document.createElement('option');
+      o.value=j; o.textContent=(j>12?(j-12):j)+':30 '+(j>=12?'petang':'pagi');
+      s.appendChild(o);
+    }
+    s.value=lalai;
+  });
+})();
+window.EZ.muatJam=function(t){
+  $('jamPagi').value  = t?.jamPagi  ?? 7;
+  $('jamSemak').value = t?.jamSemak ?? 10;
+  $('peringatanAktif').checked = t?.aktif !== false;
+};
+window.EZ.ambilJam=()=>({
+  jamPagi:  parseInt($('jamPagi').value,10),
+  jamSemak: parseInt($('jamSemak').value,10),
+  aktif:    $('peringatanAktif').checked
+});
 
 /* ── telegram ───────────────────────────────────────────────── */
 async function tg(method,body,tokenPaksa){
@@ -1668,6 +1735,10 @@ async function muatData(){
     const d=await F.getDoc(F.doc(fs,'sekolah',sidKini,'tetapan','telegram'));
     window.EZ.muatTelegram(d.exists()?d.data():null);
   }catch(e){ window.EZ.muatTelegram(null); }
+  try{
+    const d=await F.getDoc(F.doc(fs,'sekolah',sidKini,'tetapan','peringatan'));
+    window.EZ.muatJam(d.exists()?d.data():null);
+  }catch(e){ window.EZ.muatJam(null); }
 }
 
 /* ── pengguna sekolah ───────────────────────────────────────── */
@@ -1993,6 +2064,18 @@ $('btnLaporTg').addEventListener('click',async e=>{
 });
 
 window.EZfs = Object.assign(window.EZfs||{}, {simpanRekod, muatLaporan, hidupkanTolak, matikanTolak});
+
+$('btnSimpanJam').addEventListener('click',async e=>{
+  const b=e.target; b.disabled=true; b.textContent='Menyimpan…';
+  try{
+    const t=window.EZ.ambilJam();
+    if(t.jamSemak<=t.jamPagi) throw new Error('Semakan admin mesti lebih lewat daripada ingatan guru.');
+    await F.setDoc(F.doc(fs,'sekolah',sidKini,'tetapan','peringatan'),
+      {...t, dikemas:F.serverTimestamp(), oleh:emelSaya()});
+    window.EZ.toast('Waktu peringatan disimpan.','good');
+  }catch(e2){ window.EZ.toast(e2.message||ringkas(e2),'bad'); }
+  b.disabled=false; b.textContent='Simpan waktu peringatan';
+});
 
 /* ── panel pemilik ──────────────────────────────────────────── */
 async function senaraiSemuaSekolah(){

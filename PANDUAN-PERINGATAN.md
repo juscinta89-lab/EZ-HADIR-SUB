@@ -42,14 +42,28 @@ firebase deploy --only functions
 
 Kali pertama, Firebase akan minta anda aktifkan beberapa API (Cloud Build, Artifact Registry, Cloud Scheduler). Tekan **Yes** untuk semua.
 
-Selepas siap, dua jadual akan muncul di Google Cloud Console → Cloud Scheduler:
+Selepas siap, **satu** jadual muncul di Google Cloud Console → Cloud Scheduler:
+`peringatanHarian`, berjalan setiap jam antara 6:30 pagi hingga 1:30 petang, Isnin–Jumaat.
 
-| Jadual | Masa | Fungsi |
-|---|---|---|
-| `peringatanPagi` | 7:30 pagi, Isnin–Jumaat | Ingatkan semua guru merekod kehadiran |
-| `semakanTengahari` | 10:30 pagi, Isnin–Jumaat | Beritahu **admin** kelas yang belum lapor |
+Jadual itu bangun setiap jam, kemudian menyemak tetapan setiap sekolah untuk
+menentukan siapa perlu dihubungi pada jam tersebut. Jadi **waktu ditetapkan
+dari dalam app, bukan dalam kod**.
 
-Waktu mengikut zon Asia/Kuala_Lumpur. Untuk tukar, edit baris `schedule:` dalam `functions/index.js`, kemudian deploy semula.
+---
+
+## C2. Menukar waktu peringatan
+
+Admin sekolah: **Menu → Tetapan admin → Telegram → Waktu peringatan**
+
+| Medan | Maksud |
+|---|---|
+| Ingatan guru | Semua guru diingatkan merekod kehadiran |
+| Semakan admin | Admin menerima senarai kelas yang belum lapor |
+| Hidupkan peringatan | Matikan semua notifikasi untuk sekolah ini |
+
+Pilihan 6:30 pagi hingga 1:30 petang. Semakan admin mesti lebih lewat daripada
+ingatan guru. Setiap sekolah bebas memilih waktunya sendiri — tiada deploy
+diperlukan selepas ini.
 
 ---
 
@@ -81,13 +95,13 @@ Tetapan berikut sudah dimasukkan dalam `functions/index.js`:
 | `memory` | 256MiB | Saiz terkecil |
 | `minInstances` | 0 | Tiada instance menunggu, jadi tiada caj masa melahu |
 | `maxInstances` | 2 | Had perbelanjaan jika berlaku ralat berulang |
-| Bilangan jadual | 2 | Cloud Scheduler percuma sehingga 3 jadual |
+| Bilangan jadual | 1 | Cloud Scheduler percuma sehingga 3 jadual |
 
 **Anggaran penggunaan bulanan**
-- Panggilan fungsi: ~44 (percuma sehingga 2,000,000)
+- Panggilan fungsi: ~176 (percuma sehingga 2,000,000)
 - Masa pengiraan: beberapa saat sehari (percuma sehingga 400,000 GB-saat)
 - FCM: percuma tanpa had
-- Cloud Scheduler: 2 jadual (percuma sehingga 3)
+- Cloud Scheduler: 1 jadual (percuma sehingga 3)
 - Artifact Registry: simpanan imej fungsi, lebih kurang **RM0.20–0.50 sebulan**
 
 Satu-satunya caj sebenar ialah simpanan imej. Untuk mengecilkannya:
@@ -102,7 +116,7 @@ Google Cloud Console → **Billing** → **Budgets & alerts** → Create budget 
 ## G. Menyahpasang jika perlu
 
 ```bash
-firebase functions:delete peringatanPagi semakanTengahari --region asia-southeast1
+firebase functions:delete peringatanHarian --region asia-southeast1
 ```
 
 App akan kembali menggunakan peringatan tempatan secara automatik.

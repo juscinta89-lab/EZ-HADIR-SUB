@@ -1,13 +1,18 @@
 /* ══════════════════════════════════════════════════════════════
    EZ-HADIR — peringatan harian melalui Cloud Functions + FCM
 
-   Dua jadual sahaja, kedua-duanya dalam kuota percuma:
-     peringatanPagi   — 07:30, ingatkan semua guru merekod kehadiran
-     semakanTengahari — 10:30, beritahu admin kelas yang belum lapor
+   SATU jadual sahaja. Ia bangun setiap jam antara 6 pagi hingga
+   1 petang (Isnin–Jumaat), kemudian menyemak tetapan setiap
+   sekolah untuk menentukan siapa perlu dihubungi pada jam itu.
 
-   Kos: Cloud Scheduler percuma sehingga 3 jadual sebulan.
-        Cloud Functions percuma sehingga 2 juta panggilan sebulan.
-        Dua jadual × ~22 hari = ~44 panggilan sebulan.
+   Setiap sekolah menetapkan waktunya sendiri melalui app:
+     Tetapan admin → Telegram → Waktu peringatan
+   Disimpan di: sekolah/{sid}/tetapan/peringatan
+                { jamPagi: 7, jamSemak: 10, aktif: true }
+
+   Kos: Cloud Scheduler percuma sehingga 3 jadual (kita guna 1).
+        Cloud Functions percuma sehingga 2 juta panggilan sebulan
+        (kita guna lebih kurang 176).
    ══════════════════════════════════════════════════════════════ */
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
@@ -17,26 +22,19 @@ const admin = require('firebase-admin');
 admin.initializeApp();
 const db = admin.firestore();
 
-/* Tetapan jimat kos: rantau berdekatan, memori minimum,
-   tiada instance sentiasa hidup, had instance rendah. */
 setGlobalOptions({
   region: 'asia-southeast1',
   memory: '256MiB',
   minInstances: 0,
   maxInstances: 2,
-  timeoutSeconds: 120
+  timeoutSeconds: 180
 });
 
 const ZON = 'Asia/Kuala_Lumpur';
-
-/* ── pembantu ───────────────────────────────────────────────── */
-function hariKerja() {
-  const h = new Date(new Date().toLocaleString('en-US', { timeZone: ZON })).getDay();
-  return h !== 0 && h !== 6;              // langkau Sabtu dan Ahad
-}
+const kiniMY = () => new Date(new Date().toLocaleString('en-US', { timeZone: ZON }));
 
 function tarikhHariIni() {
-  const d = new Date(new Date().toLocaleString('en-US', { timeZone: ZON }));
+  const d = kiniMY();
   const p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
@@ -81,54 +79,62 @@ async function hantar(sid, tokenDocs, title, body, tag) {
   return berjaya;
 }
 
-/* ── 07:30 — ingatkan semua guru ────────────────────────────── */
-exports.peringatanPagi = onSchedule(
-  { schedule: '30 7 * * 1-5', timeZone: ZON },
-  async () => {
-    if (!hariKerja()) return;
-    for (const sekolah of await sekolahAktif()) {
-      const tokens = await db.collection('sekolah').doc(sekolah.id).collection('token').get();
-      const n = await hantar(
-        sekolah.id, tokens.docs,
-        'EZ-HADIR',
-        'Selamat pagi. Masa untuk merekod kehadiran kelas hari ini.',
-        'ez-pagi'
-      );
-      console.log(`${sekolah.id}: peringatan pagi kepada ${n} peranti`);
-    }
+async function ingatanGuru(rujuk, sid) {
+  const tokens = await rujuk.collection('token').get();
+  const n = await hantar(sid, tokens.docs, 'EZ-HADIR',
+    'Selamat pagi. Masa untuk merekod kehadiran kelas hari ini.', 'ez-pagi');
+  console.log(`${sid}: ingatan pagi kepada ${n} peranti`);
+}
+
+async function semakanAdmin(rujuk, sid) {
+  const hariIni = tarikhHariIni();
+  const [kelasSnap, rekodSnap] = await Promise.all([
+    rujuk.collection('kelas').get(),
+    rujuk.collection('rekod').where('tarikh', '==', hariIni).get()
+  ]);
+  if (kelasSnap.empty) return;
+
+  const sudah = new Set(rekodSnap.docs.map(d => d.data().kelas));
+  const belum = kelasSnap.docs.map(d => d.data().nama).filter(n => n && !sudah.has(n));
+  if (!belum.length) {
+    console.log(`${sid}: semua kelas sudah lapor`);
+    return;
   }
-);
 
-/* ── 10:30 — beritahu admin kelas yang belum lapor ──────────── */
-exports.semakanTengahari = onSchedule(
-  { schedule: '30 10 * * 1-5', timeZone: ZON },
+  const tokens = await rujuk.collection('token')
+    .where('peranan', 'in', ['admin', 'pemilik']).get();
+  const senarai = belum.slice(0, 5).join(', ') +
+    (belum.length > 5 ? ` dan ${belum.length - 5} lagi` : '');
+  const n = await hantar(sid, tokens.docs, 'Kelas belum lapor',
+    `${belum.length} kelas belum hantar kehadiran: ${senarai}`, 'ez-semak');
+  console.log(`${sid}: ${belum.length} kelas belum lapor, ${n} admin dimaklumkan`);
+}
+
+/* ── satu jadual, bangun setiap jam 6 pagi hingga 1 petang ──── */
+exports.peringatanHarian = onSchedule(
+  { schedule: '30 6-13 * * 1-5', timeZone: ZON },
   async () => {
-    if (!hariKerja()) return;
-    const hariIni = tarikhHariIni();
+    const jam = kiniMY().getHours();
+    console.log(`Semakan pada jam ${jam}:30 waktu Malaysia`);
 
     for (const sekolah of await sekolahAktif()) {
-      const rujuk = db.collection('sekolah').doc(sekolah.id);
+      const sid = sekolah.id;
+      const rujuk = db.collection('sekolah').doc(sid);
 
-      const [kelasSnap, rekodSnap] = await Promise.all([
-        rujuk.collection('kelas').get(),
-        rujuk.collection('rekod').where('tarikh', '==', hariIni).get()
-      ]);
-      if (kelasSnap.empty) continue;
+      let t = { jamPagi: 7, jamSemak: 10, aktif: true };
+      try {
+        const d = await rujuk.collection('tetapan').doc('peringatan').get();
+        if (d.exists) t = { ...t, ...d.data() };
+      } catch (e) { /* guna nilai lalai */ }
 
-      const sudah = new Set(rekodSnap.docs.map(d => d.data().kelas));
-      const belum = kelasSnap.docs.map(d => d.data().nama).filter(n => n && !sudah.has(n));
-      if (!belum.length) continue;
+      if (t.aktif === false) continue;
 
-      // hanya admin menerima semakan ini
-      const tokens = await rujuk.collection('token').where('peranan', 'in', ['admin', 'pemilik']).get();
-      const senarai = belum.slice(0, 5).join(', ') + (belum.length > 5 ? ` dan ${belum.length - 5} lagi` : '');
-      const n = await hantar(
-        sekolah.id, tokens.docs,
-        'Kelas belum lapor',
-        `${belum.length} kelas belum hantar kehadiran: ${senarai}`,
-        'ez-semak'
-      );
-      console.log(`${sekolah.id}: ${belum.length} kelas belum lapor, ${n} admin dimaklumkan`);
+      try {
+        if (jam === Number(t.jamPagi))  await ingatanGuru(rujuk, sid);
+        if (jam === Number(t.jamSemak)) await semakanAdmin(rujuk, sid);
+      } catch (e) {
+        console.error(`${sid}: ralat`, e);
+      }
     }
   }
 );
