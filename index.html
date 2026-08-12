@@ -42,7 +42,7 @@ window.CONFIG = {
      Cloud Messaging → Web Push certificates → Generate key pair).
      Biarkan kosong jika Cloud Functions belum dipasang — app akan
      guna peringatan tempatan sebagai ganti. */
-  VAPID: "BBV-mqCUOBu3VzHePqk7zOtBqtDPovw5QgvU0lJalIHcjXqdrVt1vXJDRRKjrfSDZQDYSgEAxo8Rg5QLfNbkoyo",
+  VAPID: "",
 
   /* Nama produk untuk paparan dan invois */
   JENAMA: "EZ-HADIR"
@@ -1550,6 +1550,7 @@ function lukisDiag(nota){
     'Alamat      : '+location.protocol+'//'+location.host+location.pathname,
     'Protokol    : '+location.protocol+(location.protocol==='file:'?'  ← MASALAH':'  ok'),
     'Pustaka     : '+(window.__fbSiap?'dimuatkan':'GAGAL dimuatkan'),
+    'Modul       : '+(window.__modSiap?'siap':'BELUM siap'),
     'Tetapan     : '+(adaTetapan?'dijumpai':'TIDAK DIJUMPAI dalam index.html'),
     'authDomain  : '+(c.FIREBASE?.authDomain||'(kosong)'),
     'projectId   : '+(c.FIREBASE?.projectId||'(kosong)'),
@@ -1572,7 +1573,9 @@ function lukisDiag(nota){
 let mulaLogMasuk=null;
 btn.addEventListener('click',()=>{
   if(mulaLogMasuk) return mulaLogMasuk();
-  gagal(status.gagal || 'Sistem log masuk masih dimuatkan. Tunggu sebentar dan cuba lagi.');
+  gagal(status.gagal || (window.__fbSiap
+    ? 'Modul log masuk tersekat. Ketuk "Kenapa saya tak boleh masuk?" untuk butiran.'
+    : 'Sistem log masuk masih dimuatkan. Tunggu 3 saat dan cuba lagi.'));
 });
 const status={gagal:''};
 
@@ -1647,6 +1650,22 @@ try{
   gagal('Gagal memulakan Firebase: '+(e?.message||e)); lukisDiag(); throw e;
 }
 
+/* Pengendali butang dipasang di sini, sebelum sebarang operasi
+   rangkaian, supaya butang berfungsi walaupun langkah kemudian
+   tersekat atau gagal. */
+mulaLogMasuk=async()=>{
+  btn.disabled=true; err.textContent='';
+  try{ await A.signInWithPopup(auth,provider); }
+  catch(e){
+    const c=e.code||'';
+    if(c.includes('popup')||c.includes('operation-not-supported')||c.includes('cancelled-popup')){
+      try{ await A.signInWithRedirect(auth,provider); }catch(e2){ gagal(mesej(e2)); }
+    } else gagal(mesej(e));
+  }
+  btn.disabled=false;
+};
+window.__modSiap=true; lukisDiag();
+
 const pemilikSenarai=(CONFIG.PEMILIK||[]).map(e=>e.toLowerCase()).filter(Boolean);
 const emelSaya=()=>(auth.currentUser?.email||'').toLowerCase();
 const isPemilik=()=>pemilikSenarai.includes(emelSaya());
@@ -1662,10 +1681,9 @@ $('btnRedirect').addEventListener('click',async()=>{
   try{ await A.signInWithRedirect(auth,provider); }catch(e){ gagal(mesej(e)); }
 });
 
-try{
-  const hasil=await A.getRedirectResult(auth);
-  if(hasil?.user) lukisDiag('kembali dari halaman Google sebagai '+hasil.user.email);
-}catch(e){ gagal(mesej(e)); }
+A.getRedirectResult(auth)
+  .then(h=>{ if(h?.user) lukisDiag('kembali dari halaman Google sebagai '+h.user.email); })
+  .catch(e=>gagal(mesej(e)));
 
 /* ── kitaran log masuk ──────────────────────────────────────── */
 A.onAuthStateChanged(auth, async u=>{
@@ -2220,17 +2238,6 @@ $('btnCiptaSekolah').addEventListener('click',async e=>{
 });
 
 /* ── log masuk / keluar ─────────────────────────────────────── */
-mulaLogMasuk=async()=>{
-  btn.disabled=true; err.textContent='';
-  try{ await A.signInWithPopup(auth,provider); }
-  catch(e){
-    const c=e.code||'';
-    if(c.includes('popup')||c.includes('operation-not-supported')||c.includes('cancelled-popup')){
-      try{ await A.signInWithRedirect(auth,provider); }catch(e2){ gagal(mesej(e2)); }
-    } else gagal(mesej(e));
-  }
-  btn.disabled=false;
-};
 $('btnKeluar').addEventListener('click',async()=>{
   if(!confirm('Log keluar dari '+CONFIG.JENAMA+'?')) return;
   document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
@@ -2250,6 +2257,14 @@ function mesej(e){
   if(c.includes('cancelled')||c.includes('closed-by-user')) return '';
   return 'Log masuk gagal: '+(e?.message||c);
 }
+
+/* Tangkap sebarang ralat modul yang belum ditangkap */
+window.addEventListener('error',e=>{
+  if(!window.__modSiap){
+    status.gagal='Ralat memuatkan modul: '+(e.message||'tidak diketahui');
+    gagal(status.gagal);
+  }
+});
 </script>
 </body>
 </html>
