@@ -1374,10 +1374,10 @@ window.EZ.ambilJam=()=>({
   if(!await mintaIzin()) return;
 
   // Cuba notifikasi awan dahulu (berfungsi walaupun app ditutup)
-  let sebab='Cloud Functions belum dipasang.';
+  let sebab='Modul Firebase belum siap. Tutup app dan buka semula.';
   if(window.EZfs?.hidupkanTolak){
     const r=await window.EZfs.hidupkanTolak();
-    if(r?.ok){
+    if(r===true||r?.ok){
       window.EZ.setPeringatan('awan');
       return toast('Peringatan dihidupkan. Notifikasi akan sampai walaupun app ditutup.','good');
     }
