@@ -132,6 +132,17 @@ service cloud.firestore {
         allow delete: if pemilik() || adminSekolah(sid);
       }
 
+      match /token/{tokenId} {
+        // setiap pengguna hanya urus token perantinya sendiri.
+        // Cloud Functions guna Admin SDK dan tidak terikat pada rules ini.
+        allow read, delete: if pemilik()
+                            || adminSekolah(sid)
+                            || (ahli(sid) && resource.data.emel == emel());
+        allow create, update: if ahli(sid)
+                              && request.resource.data.emel == emel()
+                              && request.resource.data.sid == sid;
+      }
+
       match /tetapan/{docId} {
         allow read:  if pemilik() || (ahli(sid) && sekolahHidup(sid));
         allow write: if pemilik() || (adminSekolah(sid) && sekolahHidup(sid));

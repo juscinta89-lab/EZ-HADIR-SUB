@@ -38,6 +38,12 @@ window.CONFIG = {
      Mesti sama dengan senarai dalam firestore.rules. */
   PEMILIK: ["juscinta89@gmail.com"],
 
+  /* Kunci VAPID untuk notifikasi tolak (Firebase → Project settings →
+     Cloud Messaging → Web Push certificates → Generate key pair).
+     Biarkan kosong jika Cloud Functions belum dipasang — app akan
+     guna peringatan tempatan sebagai ganti. */
+  VAPID: "",
+
   /* Nama produk untuk paparan dan invois */
   JENAMA: "EZ-HADIR"
 };
@@ -260,6 +266,7 @@ select:focus,input:focus,textarea:focus{border-color:var(--biru);outline:none}
 .cap{display:flex;justify-content:flex-end;gap:5px;margin-top:7px;
   font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted)}
 .duo{display:flex;gap:9px;margin-top:14px}
+.duo button[hidden]{display:none}
 .duo button{
   flex:1;height:48px;border:1.5px solid var(--garis);background:var(--kertas);color:var(--ink-2);
   border-radius:13px;font-weight:600;font-size:14px;display:flex;align-items:center;justify-content:center;gap:8px
@@ -727,7 +734,7 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
           <svg viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
           Muat turun CSV
         </button>
-        <button id="btnLaporTg">
+        <button id="btnLaporTg" hidden>
           <svg viewBox="0 0 24 24"><path d="M21.5 3.5 2.8 10.3c-.8.3-.8 1.4 0 1.7l6.4 2.3 2.3 6.4c.3.8 1.4.8 1.7 0z"/></svg>
           Hantar ringkasan
         </button>
@@ -828,7 +835,9 @@ window.EZ={
   },
   setPeranan(p, bilSekolah){
     PERANAN=p||'guru';
-    $('btnSet').hidden = !(PERANAN==='admin'||PERANAN==='pemilik');
+    const bos = PERANAN==='admin'||PERANAN==='pemilik';
+    $('btnSet').hidden = !bos;
+    $('btnLaporTg').hidden = !bos;
     $('btnPemilik').hidden = PERANAN!=='pemilik';
     $('btnTukarSekolah').hidden = (bilSekolah||0)<2 && PERANAN!=='pemilik';
     const l=$('lencana');
@@ -1258,44 +1267,67 @@ window.EZ.ringkasanTeks=function(d,tajuk){
 };
 
 /* ── peringatan harian ──────────────────────────────────────── */
-let jamPeringatan=null, penandaJam=null;
-function labelPeringatan(){
-  $('labelPeringatan').textContent = jamPeringatan===null?'Tutup':jamPeringatan+':00 pagi';
-}
-function jadualPeringatan(){
+let modPeringatan='tutup';          // tutup | awan | tempatan
+let jamTempatan=null, penandaJam=null;
+
+window.EZ.setPeringatan=function(mod,jam){
+  modPeringatan=mod; if(jam!=null) jamTempatan=jam;
+  $('labelPeringatan').textContent =
+    mod==='awan'     ? 'Hidup'
+  : mod==='tempatan' ? (jamTempatan+':00 pagi')
+  :                    'Tutup';
+};
+window.EZ.jamPeringatan=()=>jamTempatan;
+
+function jadualTempatan(){
   clearTimeout(penandaJam);
-  if(jamPeringatan===null) return;
+  if(modPeringatan!=='tempatan'||jamTempatan===null) return;
   const kini=new Date(), sasar=new Date();
-  sasar.setHours(jamPeringatan,0,0,0);
+  sasar.setHours(jamTempatan,0,0,0);
   if(sasar<=kini) sasar.setDate(sasar.getDate()+1);
   penandaJam=setTimeout(()=>{
     const h=new Date().getDay();
-    if(h!==0&&h!==6){   // langkau hujung minggu
-      try{
-        new Notification('EZ-HADIR', {
-          body:'Masa untuk merekod kehadiran kelas hari ini.',
-          icon:'icon-192.png', tag:'ez-hadir-harian'
-        });
-      }catch{}
+    if(h!==0&&h!==6){
+      try{ new Notification('EZ-HADIR',{
+        body:'Masa untuk merekod kehadiran kelas hari ini.',
+        icon:'icon-192.png', tag:'ez-hadir-harian' }); }catch{}
     }
-    jadualPeringatan();
+    jadualTempatan();
   }, sasar-kini);
 }
+
+async function mintaIzin(){
+  if(!('Notification' in window)){ toast('Peranti ini tidak menyokong notifikasi.','bad'); return false; }
+  let izin=Notification.permission;
+  if(izin==='default') izin=await Notification.requestPermission();
+  if(izin!=='granted'){ toast('Kebenaran notifikasi ditolak. Buka tetapan pelayar untuk membenarkannya.','bad'); return false; }
+  return true;
+}
+
 $('btnPeringatan').addEventListener('click',async()=>{
-  if(jamPeringatan!==null){
-    jamPeringatan=null; labelPeringatan(); jadualPeringatan();
+  if(modPeringatan!=='tutup'){
+    if(modPeringatan==='awan') await window.EZfs?.matikanTolak?.();
+    modPeringatan='tutup'; jadualTempatan(); window.EZ.setPeringatan('tutup');
     return toast('Peringatan dimatikan.');
   }
-  if(!('Notification' in window)) return toast('Peranti ini tidak menyokong notifikasi.','bad');
-  let izin=Notification.permission;
-  if(izin!=='granted') izin=await Notification.requestPermission();
-  if(izin!=='granted') return toast('Kebenaran notifikasi ditolak. Buka tetapan pelayar untuk membenarkannya.','bad');
-  const jam=parseInt(prompt('Ingatkan saya pada pukul berapa pagi? (7 hingga 11)','8'),10);
+  if(!await mintaIzin()) return;
+
+  // Cuba notifikasi awan dahulu (berfungsi walaupun app ditutup)
+  if(window.EZfs?.hidupkanTolak){
+    const ok=await window.EZfs.hidupkanTolak();
+    if(ok){
+      window.EZ.setPeringatan('awan');
+      return toast('Peringatan dihidupkan. Notifikasi akan sampai walaupun app ditutup.','good');
+    }
+  }
+  // Sandaran: peringatan tempatan
+  const jam=parseInt(prompt('Notifikasi awan tidak tersedia. Guna peringatan tempatan pada pukul berapa pagi? (6 hingga 12)','8'),10);
   if(!(jam>=6&&jam<=12)) return toast('Masukkan nombor antara 6 dan 12.','bad');
-  jamPeringatan=jam; labelPeringatan(); jadualPeringatan();
-  toast('Peringatan setiap hari sekolah pada '+jam+':00 pagi.','good');
+  jamTempatan=jam; modPeringatan='tempatan';
+  window.EZ.setPeringatan('tempatan',jam); jadualTempatan();
+  toast('Peringatan tempatan pada '+jam+':00 pagi. Berfungsi selagi app dalam ingatan telefon.','good');
 });
-labelPeringatan();
+window.EZ.setPeringatan('tutup');
 
 /* ── telegram ───────────────────────────────────────────────── */
 async function tg(method,body,tokenPaksa){
@@ -1343,7 +1375,9 @@ $('btnSend').addEventListener('click',async()=>{
   b.disabled=false; b.innerHTML=asal;
 });
 
+window.EZ.adaKuasaAdmin=()=>PERANAN==='admin'||PERANAN==='pemilik';
 window.EZ.hantarTeks=async function(teks){
+  if(!window.EZ.adaKuasaAdmin()) throw new Error('Hanya admin sekolah boleh menghantar ringkasan.');
   if(LUPUT) throw new Error('Langganan sekolah ini telah tamat.');
   if(!TG.chatId) throw new Error('Chat ID belum ditetapkan oleh admin.');
   await tg('sendMessage', TG.mono
@@ -1619,6 +1653,7 @@ async function tukarSekolah(sid){
 
   await muatData();
   if(peranan==='admin'||peranan==='pemilik'){ muatPengguna(); muatJemputan(); }
+  semakTolakSediaAda();
 }
 
 async function muatData(){
@@ -1792,6 +1827,61 @@ $('btnSimpanKelas').addEventListener('click',async e=>{
 });
 
 
+
+/* ── notifikasi tolak (FCM) ─────────────────────────────────── */
+let M=null;
+async function muatMessaging(){
+  if(M) return M;
+  try{
+    const mod=await import('https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging.js');
+    M=mod; return M;
+  }catch{ return null; }
+}
+const kunciToken=t=>t.slice(0,120).replace(/[^A-Za-z0-9_-]/g,'');
+
+async function hidupkanTolak(){
+  const vapid=(CONFIG.VAPID||'').trim();
+  if(!vapid || !sidKini) return false;
+  try{
+    const mod=await muatMessaging();
+    if(!mod || !(await mod.isSupported?.())) return false;
+    const reg=await navigator.serviceWorker.register('firebase-messaging-sw.js',{scope:'./'});
+    const msg=mod.getMessaging(app);
+    const token=await mod.getToken(msg,{vapidKey:vapid, serviceWorkerRegistration:reg});
+    if(!token) return false;
+    await F.setDoc(F.doc(fs,'sekolah',sidKini,'token',kunciToken(token)),{
+      token, emel:emelSaya(), peranan, sid:sidKini,
+      dikemas:F.serverTimestamp()
+    });
+    localStorage.setItem('ez_token',token);
+    mod.onMessage(msg,p=>{
+      window.EZ.toast(p?.notification?.body||'Peringatan EZ-HADIR');
+    });
+    return true;
+  }catch(e){
+    console.warn('FCM:',e);
+    return false;
+  }
+}
+async function matikanTolak(){
+  const t=localStorage.getItem('ez_token');
+  localStorage.removeItem('ez_token');
+  if(!t||!sidKini) return;
+  try{ await F.deleteDoc(F.doc(fs,'sekolah',sidKini,'token',kunciToken(t))); }catch{}
+}
+async function semakTolakSediaAda(){
+  const t=localStorage.getItem('ez_token');
+  if(!t||!sidKini) return;
+  if(!('Notification' in window)||Notification.permission!=='granted'){
+    localStorage.removeItem('ez_token'); return;
+  }
+  try{
+    const d=await F.getDoc(F.doc(fs,'sekolah',sidKini,'token',kunciToken(t)));
+    if(d.exists()) window.EZ.setPeringatan('awan');
+    else localStorage.removeItem('ez_token');
+  }catch{}
+}
+
 /* ── rekod kehadiran, laporan & analisis ────────────────────── */
 const idRekod=(tarikh,kelas)=>tarikh+'_'+slug(kelas);
 
@@ -1893,6 +1983,7 @@ $('btnCsv').addEventListener('click',()=>{
 
 $('btnLaporTg').addEventListener('click',async e=>{
   if(!laporanKini) return;
+  if(!window.EZ.adaKuasaAdmin()) return window.EZ.toast('Hanya admin sekolah boleh menghantar ringkasan.','bad');
   const b=e.target; b.disabled=true;
   try{
     await window.EZ.hantarTeks(window.EZ.ringkasanTeks(laporanKini,tajukKini));
@@ -1901,7 +1992,7 @@ $('btnLaporTg').addEventListener('click',async e=>{
   b.disabled=false;
 });
 
-window.EZfs = Object.assign(window.EZfs||{}, {simpanRekod, muatLaporan});
+window.EZfs = Object.assign(window.EZfs||{}, {simpanRekod, muatLaporan, hidupkanTolak, matikanTolak});
 
 /* ── panel pemilik ──────────────────────────────────────────── */
 async function senaraiSemuaSekolah(){
