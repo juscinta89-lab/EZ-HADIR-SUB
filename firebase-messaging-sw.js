@@ -3,8 +3,8 @@
    TUKAR tetapan di bawah kepada tetapan projek Firebase anda
    (sama seperti CONFIG.FIREBASE dalam index.html). */
 
-importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.0.2/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging-compat.js');
 
 firebase.initializeApp({
   apiKey:            "AIzaSyDUYbamgSKQo0TPDQnFq7r97mFVKL2tm4s",

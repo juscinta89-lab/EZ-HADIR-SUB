@@ -1967,8 +1967,7 @@ async function hidupkanTolak(){
 
     let reg;
     try{
-      reg=await navigator.serviceWorker.register('firebase-messaging-sw.js',{scope:'./'});
-      await navigator.serviceWorker.ready;
+      reg = await navigator.serviceWorker.ready; // Guna Service Worker PWA sedia ada
     }catch(e){
       return {ok:false, sebab:'Fail firebase-messaging-sw.js tidak dijumpai di pelayan. Pastikan ia diupload ke folder yang sama dengan index.html.'};
     }
@@ -2248,6 +2247,9 @@ $('btnCiptaSekolah').addEventListener('click',async e=>{
 $('btnKeluar').addEventListener('click',async()=>{
   if(!confirm('Log keluar dari '+CONFIG.JENAMA+'?')) return;
   document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
+  if (window.EZfs && window.EZfs.matikanTolak) {
+    await window.EZfs.matikanTolak();
+  }
   await A.signOut(auth);
 });
 
