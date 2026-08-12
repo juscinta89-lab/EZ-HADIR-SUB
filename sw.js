@@ -1,7 +1,7 @@
 /* Lapor Kehadiran — service worker
    Naikkan nombor VERSI setiap kali fail index.html dikemas kini,
    supaya telefon guru memuat turun versi baharu.                     */
-const VERSI = 'ezhadir-v17';
+const VERSI = 'ezhadir-v18';
 
 const SHELL = [
   './',
@@ -39,6 +39,8 @@ self.addEventListener('fetch', e => {
 
   const url = new URL(req.url);
   if (url.hostname === 'api.telegram.org') return;
+  // jangan cache fail service worker FCM; ia mesti sentiasa segar
+  if (url.pathname.endsWith('firebase-messaging-sw.js')) return;
 
   // Fail app sendiri: rangkaian dahulu, cache sebagai sandaran.
   if (url.origin === location.origin) {

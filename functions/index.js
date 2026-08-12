@@ -16,6 +16,7 @@
    ══════════════════════════════════════════════════════════════ */
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
 
@@ -109,6 +110,25 @@ async function semakanAdmin(rujuk, sid) {
     `${belum.length} kelas belum hantar kehadiran: ${senarai}`, 'ez-semak');
   console.log(`${sid}: ${belum.length} kelas belum lapor, ${n} admin dimaklumkan`);
 }
+
+/* ── ujian: hantar notifikasi serta-merta kepada pemanggil ──── */
+exports.ujiNotifikasi = onCall(async (req) => {
+  const emel = (req.auth?.token?.email || '').toLowerCase();
+  if (!emel) throw new HttpsError('unauthenticated', 'Perlu log masuk.');
+
+  const sid = String(req.data?.sid || '').trim();
+  if (!sid) throw new HttpsError('invalid-argument', 'sid diperlukan.');
+
+  // hanya token milik pemanggil sendiri
+  const tokens = await db.collection('sekolah').doc(sid)
+    .collection('token').where('emel', '==', emel).get();
+  if (tokens.empty) return { dihantar: 0, nota: 'Tiada peranti berdaftar.' };
+
+  const n = await hantar(sid, tokens.docs, 'EZ-HADIR',
+    'Notifikasi ujian berjaya. Peringatan harian anda sudah berfungsi.', 'ez-uji');
+  console.log(`Ujian oleh ${emel} di ${sid}: ${n} peranti`);
+  return { dihantar: n };
+});
 
 /* ── satu jadual, bangun setiap jam 6 pagi hingga 1 petang ──── */
 exports.peringatanHarian = onSchedule(

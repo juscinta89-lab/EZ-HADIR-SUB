@@ -42,7 +42,7 @@ window.CONFIG = {
      Cloud Messaging → Web Push certificates → Generate key pair).
      Biarkan kosong jika Cloud Functions belum dipasang — app akan
      guna peringatan tempatan sebagai ganti. */
-  VAPID: "BBV-mqCUOBu3VzHePqk7zOtBqtDPovw5QgvU0lJalIHcjXqdrVt1vXJDRRKjrfSDZQDYSgEAxo8Rg5QLfNbkoyo",
+  VAPID: "",
 
   /* Nama produk untuk paparan dan invois */
   JENAMA: "EZ-HADIR"
@@ -555,6 +555,10 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
       <svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7z"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
       Peringatan harian <i id="labelPeringatan">Tutup</i>
     </button>
+    <button class="menu-item" id="btnUjiNotif" hidden>
+      <svg viewBox="0 0 24 24"><path d="M12 3v2M5.6 5.6l1.4 1.4M3 12h2M19 12h2M18.4 5.6 17 7"/><circle cx="12" cy="14" r="5"/><path d="M12 12v2.5l1.5 1"/></svg>
+      Uji notifikasi sekarang
+    </button>
     <button class="menu-item" id="btnTema2">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2"/></svg>
       Tema paparan <i id="labelTema">Ikut telefon</i>
@@ -1051,6 +1055,18 @@ function tukarTema(){
 }
 $('btnTema').addEventListener('click',tukarTema);
 $('btnTema2').addEventListener('click',tukarTema);
+$('btnUjiNotif').addEventListener('click',async()=>{
+  tutupSheet('sheetMenu');
+  toast('Menghantar notifikasi ujian…');
+  const r=await window.EZfs?.ujiTolak?.();
+  if(r?.ok){
+    const n=r.data?.dihantar ?? 0;
+    toast(n? 'Ujian dihantar ke '+n+' peranti. Kunci skrin telefon untuk melihatnya.'
+           : 'Tiada peranti berdaftar untuk akaun ini.', n?'good':'bad');
+  } else {
+    alert('Ujian gagal.\n\n'+(r?.sebab||'Sebab tidak diketahui.'));
+  }
+});
 
 /* ── helaian ────────────────────────────────────────────────── */
 function bukaSheet(id){ $(id).classList.add('open'); }
@@ -1293,6 +1309,7 @@ let jamTempatan=null, penandaJam=null;
 
 window.EZ.setPeringatan=function(mod,jam){
   modPeringatan=mod; if(jam!=null) jamTempatan=jam;
+  $('btnUjiNotif').hidden = mod!=='awan';
   $('labelPeringatan').textContent =
     mod==='awan'     ? 'Hidup'
   : mod==='tempatan' ? (jamTempatan+':00 pagi')
@@ -1357,15 +1374,19 @@ window.EZ.ambilJam=()=>({
   if(!await mintaIzin()) return;
 
   // Cuba notifikasi awan dahulu (berfungsi walaupun app ditutup)
+  let sebab='Cloud Functions belum dipasang.';
   if(window.EZfs?.hidupkanTolak){
-    const ok=await window.EZfs.hidupkanTolak();
-    if(ok){
+    const r=await window.EZfs.hidupkanTolak();
+    if(r?.ok){
       window.EZ.setPeringatan('awan');
       return toast('Peringatan dihidupkan. Notifikasi akan sampai walaupun app ditutup.','good');
     }
+    sebab=r?.sebab||sebab;
   }
   // Sandaran: peringatan tempatan
-  const jam=parseInt(prompt('Notifikasi awan tidak tersedia. Guna peringatan tempatan pada pukul berapa pagi? (6 hingga 12)','8'),10);
+  alert('Notifikasi awan tidak dapat dihidupkan.\n\nSebab: '+sebab+
+        '\n\nApp akan guna peringatan tempatan sebagai ganti.');
+  const jam=parseInt(prompt('Peringatan tempatan pada pukul berapa pagi? (6 hingga 12)','8'),10);
   if(!(jam>=6&&jam<=12)) return toast('Masukkan nombor antara 6 dan 12.','bad');
   jamTempatan=jam; modPeringatan='tempatan';
   window.EZ.setPeringatan('tempatan',jam); jadualTempatan();
@@ -1912,34 +1933,72 @@ const kunciToken=t=>t.slice(0,120).replace(/[^A-Za-z0-9_-]/g,'');
 
 async function hidupkanTolak(){
   const vapid=(CONFIG.VAPID||'').trim();
-  if(!vapid || !sidKini) return false;
+  if(!vapid) return {ok:false, sebab:'Kunci VAPID belum diisi dalam index.html. Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Generate key pair.'};
+  if(!sidKini) return {ok:false, sebab:'Sekolah belum dipilih.'};
+  if(!('serviceWorker' in navigator)) return {ok:false, sebab:'Pelayar ini tidak menyokong service worker.'};
+
+  const iOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+  const berdiri=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+  if(iOS && !berdiri) return {ok:false, sebab:'Pada iPhone, notifikasi hanya berfungsi selepas app dipasang ke skrin utama. Tekan Kongsi → Add to Home Screen, kemudian buka dari ikon itu.'};
+
   try{
     const mod=await muatMessaging();
-    if(!mod || !(await mod.isSupported?.())) return false;
-    const reg=await navigator.serviceWorker.register('firebase-messaging-sw.js',{scope:'./'});
+    if(!mod) return {ok:false, sebab:'Pustaka mesej Firebase gagal dimuatkan. Semak sambungan internet.'};
+    if(mod.isSupported && !(await mod.isSupported()))
+      return {ok:false, sebab:'Pelayar ini tidak menyokong notifikasi tolak. Cuba Chrome pada Android atau Safari pada iPhone.'};
+
+    let reg;
+    try{
+      reg=await navigator.serviceWorker.register('firebase-messaging-sw.js',{scope:'./'});
+      await navigator.serviceWorker.ready;
+    }catch(e){
+      return {ok:false, sebab:'Fail firebase-messaging-sw.js tidak dijumpai di pelayan. Pastikan ia diupload ke folder yang sama dengan index.html.'};
+    }
+
     const msg=mod.getMessaging(app);
-    const token=await mod.getToken(msg,{vapidKey:vapid, serviceWorkerRegistration:reg});
-    if(!token) return false;
+    let token;
+    try{
+      token=await mod.getToken(msg,{vapidKey:vapid, serviceWorkerRegistration:reg});
+    }catch(e){
+      const t=String(e?.message||e);
+      if(t.includes('applicationServerKey')||t.includes('InvalidAccessError'))
+        return {ok:false, sebab:'Kunci VAPID tidak sah. Jana semula di Firebase Console dan pastikan ia disalin penuh.'};
+      return {ok:false, sebab:'Gagal mendapatkan token: '+t};
+    }
+    if(!token) return {ok:false, sebab:'Token kosong. Cuba buang kebenaran notifikasi dalam tetapan pelayar, kemudian cuba semula.'};
+
     await F.setDoc(F.doc(fs,'sekolah',sidKini,'token',kunciToken(token)),{
-      token, emel:emelSaya(), peranan, sid:sidKini,
-      dikemas:F.serverTimestamp()
+      token, emel:emelSaya(), peranan, sid:sidKini, dikemas:F.serverTimestamp()
     });
     localStorage.setItem('ez_token',token);
     mod.onMessage(msg,p=>{
-      window.EZ.toast(p?.notification?.body||'Peringatan EZ-HADIR');
+      const d=p?.data||p?.notification||{};
+      window.EZ.toast(d.body||'Peringatan EZ-HADIR');
     });
-    return true;
+    return {ok:true};
   }catch(e){
-    console.warn('FCM:',e);
-    return false;
+    return {ok:false, sebab:'Ralat: '+ringkas(e)};
   }
 }
-async function matikanTolak(){
+
+/* Ujian hujung ke hujung melalui Cloud Functions */
+async function ujiTolak(){
   const t=localStorage.getItem('ez_token');
-  localStorage.removeItem('ez_token');
-  if(!t||!sidKini) return;
-  try{ await F.deleteDoc(F.doc(fs,'sekolah',sidKini,'token',kunciToken(t))); }catch{}
+  if(!t) return {ok:false, sebab:'Peranti ini belum berdaftar. Hidupkan Peringatan harian dahulu.'};
+  try{
+    const mod=await import('https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js');
+    const fn=mod.getFunctions(app,'asia-southeast1');
+    const panggil=mod.httpsCallable(fn,'ujiNotifikasi');
+    const hasil=await panggil({sid:sidKini});
+    return {ok:true, data:hasil.data};
+  }catch(e){
+    const t2=String(e?.message||e);
+    if(t2.includes('not-found')||t2.includes('NOT_FOUND'))
+      return {ok:false, sebab:'Fungsi ujiNotifikasi belum dipasang. Jalankan: firebase deploy --only functions'};
+    return {ok:false, sebab:t2};
+  }
 }
+
 async function semakTolakSediaAda(){
   const t=localStorage.getItem('ez_token');
   if(!t||!sidKini) return;
@@ -2063,7 +2122,7 @@ $('btnLaporTg').addEventListener('click',async e=>{
   b.disabled=false;
 });
 
-window.EZfs = Object.assign(window.EZfs||{}, {simpanRekod, muatLaporan, hidupkanTolak, matikanTolak});
+window.EZfs = Object.assign(window.EZfs||{}, {simpanRekod, muatLaporan, hidupkanTolak, matikanTolak, ujiTolak});
 
 $('btnSimpanJam').addEventListener('click',async e=>{
   const b=e.target; b.disabled=true; b.textContent='Menyimpan…';
