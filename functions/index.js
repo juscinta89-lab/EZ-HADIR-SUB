@@ -52,25 +52,41 @@ async function sekolahAktif() {
 }
 
 /* Hantar dalam kelompok 500, buang token yang sudah mati */
+/* Bina mesej untuk satu peranti. URL mesti penuh dan HTTPS
+   kerana app di-hos dalam subfolder, bukan di root domain. */
+function binaMesej(token, asal, sid, title, body, tag) {
+  const asas = (asal && /^https:\/\//.test(asal)) ? asal : null;
+  const pautan = asas ? `${asas}?s=${sid}` : undefined;
+  const ikon = asas ? `${asas}icon-192.png` : undefined;
+  const tagUnik = `${tag}-${new Date().toISOString().slice(0, 10)}`;
+
+  const webpush = {
+    headers: { Urgency: 'high', TTL: '10800' },
+    notification: {
+      title, body,
+      tag: tagUnik,
+      renotify: true,
+      requireInteraction: false,
+      ...(ikon ? { icon: ikon, badge: ikon } : {})
+    }
+  };
+  if (pautan) webpush.fcmOptions = { link: pautan };
+
+  return {
+    token,
+    data: { tag: tagUnik, ...(pautan ? { url: pautan } : {}) },
+    webpush
+  };
+}
+
 async function hantar(sid, tokenDocs, title, body, tag) {
   if (!tokenDocs.length) return 0;
   let berjaya = 0;
   for (let i = 0; i < tokenDocs.length; i += 500) {
     const kumpulan = tokenDocs.slice(i, i + 500);
-    const res = await admin.messaging().sendEachForMulticast({
-      tokens: kumpulan.map(d => d.data().token),
-      data: { tag, url: `./?s=${sid}` },
-      webpush: {
-        headers: { Urgency: 'normal', TTL: '10800' },
-        notification: {
-          title, body,
-          icon: 'icon-192.png',
-          badge: 'icon-192.png',
-          tag
-        },
-        fcmOptions: { link: `./?s=${sid}` }
-      }
-    });
+    const res = await admin.messaging().sendEach(
+      kumpulan.map(d => binaMesej(d.data().token, d.data().asal, sid, title, body, tag))
+    );
     berjaya += res.successCount;
 
     const buang = [];
@@ -141,24 +157,15 @@ exports.ujiNotifikasi = onCall(async (req) => {
     }
 
     laporan.langkah = 'hantar FCM';
-    const res = await admin.messaging().sendEachForMulticast({
-      tokens: snap.docs.map(d => d.data().token),
-      data: { tag: 'ez-uji', url: `./?s=${sid}` },
-      webpush: {
-        headers: { Urgency: 'high', TTL: '3600' },
-        // blok notification menyebabkan pelayar memaparkannya sendiri,
-        // tanpa bergantung pada kod dalam service worker
-        notification: {
-          title: 'EZ-HADIR',
-          body: 'Notifikasi ujian berjaya. Peringatan harian anda sudah berfungsi.',
-          icon: 'icon-192.png',
-          badge: 'icon-192.png',
-          tag: 'ez-uji',
-          requireInteraction: false
-        },
-        fcmOptions: { link: `./?s=${sid}` }
-      }
-    });
+    laporan.asal = snap.docs[0].data().asal || '(tidak disimpan)';
+    const res = await admin.messaging().sendEach(
+      snap.docs.map(d => binaMesej(
+        d.data().token, d.data().asal, sid,
+        'EZ-HADIR',
+        'Notifikasi ujian berjaya. Peringatan harian anda sudah berfungsi.',
+        'ez-uji-' + Date.now()
+      ))
+    );
 
     laporan.dihantar = res.successCount;
     laporan.gagal = res.failureCount;

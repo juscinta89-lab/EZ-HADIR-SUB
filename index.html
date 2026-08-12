@@ -559,6 +559,10 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
       <svg viewBox="0 0 24 24"><path d="M12 3v2M5.6 5.6l1.4 1.4M3 12h2M19 12h2M18.4 5.6 17 7"/><circle cx="12" cy="14" r="5"/><path d="M12 12v2.5l1.5 1"/></svg>
       Uji notifikasi sekarang
     </button>
+    <button class="menu-item" id="btnDiag">
+      <svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6h5"/></svg>
+      Diagnostik notifikasi
+    </button>
     <button class="menu-item" id="btnTema2">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2"/></svg>
       Tema paparan <i id="labelTema">Ikut telefon</i>
@@ -1055,6 +1059,31 @@ function tukarTema(){
 }
 $('btnTema').addEventListener('click',tukarTema);
 $('btnTema2').addEventListener('click',tukarTema);
+$('btnDiag').addEventListener('click',async()=>{
+  tutupSheet('sheetMenu');
+  toast('Menyemak…');
+  const d=await window.EZfs?.diagnosisTolak?.() || {};
+  const baris=[
+    'DIAGNOSTIK NOTIFIKASI','',
+    'Alamat        : '+(d.alamat||'?'),
+    'Protokol      : '+(d.protokol||'?')+(d.protokol==='https:'?'  ok':'  MASALAH'),
+    'Kunci VAPID   : '+(d.vapid||'?'),
+    'Kebenaran     : '+(d.izin||'?'),
+    'Dipasang PWA  : '+(d.dipasang||'?'),
+    '',
+    'Service worker: '+(d.bilanganSW ?? '?')+' berdaftar',
+    '  '+(d.senaraiSW||'-'),
+    'SW aktif      : '+(d.swAktif||'?'),
+    'Langganan push: '+(d.langganan||'?'),
+    d.hujung ? '  '+d.hujung : null,
+    '',
+    'Token tempatan: '+(d.tokenTempatan||'?'),
+    d.tokenFirestore ? 'Token pelayan : '+d.tokenFirestore : null,
+    d.swRalat ? '\nRalat SW: '+d.swRalat : null
+  ].filter(Boolean);
+  alert(baris.join('\n'));
+});
+
 $('btnUjiNotif').addEventListener('click',async()=>{
   tutupSheet('sheetMenu');
   toast('Menghantar notifikasi ujian…');
@@ -1966,11 +1995,19 @@ async function muatMessaging(){
 }
 const kunciToken=t=>t.slice(0,120).replace(/[^A-Za-z0-9_-]/g,'');
 
+/* navigator.serviceWorker.ready boleh menggantung selama-lamanya
+   jika service worker gagal. Sentiasa hadkan masa menunggu. */
+const hadMasa=(janji,ms,mesej)=>Promise.race([
+  janji,
+  new Promise((_,tolak)=>setTimeout(()=>tolak(new Error(mesej||'tamat masa')),ms))
+]);
+
 async function hidupkanTolak(){
   const vapid=(CONFIG.VAPID||'').trim();
-  if(!vapid) return {ok:false, sebab:'Kunci VAPID belum diisi dalam index.html. Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Generate key pair.'};
+  if(!vapid) return {ok:false, sebab:'Kunci VAPID belum diisi dalam index.html.'};
   if(!sidKini) return {ok:false, sebab:'Sekolah belum dipilih.'};
   if(!('serviceWorker' in navigator)) return {ok:false, sebab:'Pelayar ini tidak menyokong service worker.'};
+  if(!('PushManager' in window)) return {ok:false, sebab:'Pelayar ini tidak menyokong notifikasi tolak.'};
 
   const iOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
   const berdiri=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
@@ -1980,15 +2017,20 @@ async function hidupkanTolak(){
     const mod=await muatMessaging();
     if(!mod) return {ok:false, sebab:'Pustaka mesej Firebase gagal dimuatkan. Semak sambungan internet.'};
     if(mod.isSupported && !(await mod.isSupported()))
-      return {ok:false, sebab:'Pelayar ini tidak menyokong notifikasi tolak. Cuba Chrome pada Android atau Safari pada iPhone.'};
+      return {ok:false, sebab:'Pelayar ini tidak menyokong notifikasi tolak.'};
 
-    let reg;
-    try{
-      reg=await navigator.serviceWorker.register('firebase-messaging-sw.js',{scope:'./fcm/'});
-      await reg.update().catch(()=>{});
-    }catch(e){
-      return {ok:false, sebab:'Fail firebase-messaging-sw.js tidak dijumpai di pelayan. Pastikan ia diupload ke folder yang sama dengan index.html.'};
+    /* Guna service worker TUNGGAL yang sama dengan PWA.
+       Ini mengelakkan dua service worker berebut skop yang sama. */
+    let reg=await navigator.serviceWorker.getRegistration('./');
+    if(!reg){
+      try{ reg=await navigator.serviceWorker.register('./sw.js',{scope:'./'}); }
+      catch(e){ return {ok:false, sebab:'Gagal mendaftar sw.js: '+(e?.message||e)}; }
     }
+    try{
+      reg=await hadMasa(navigator.serviceWorker.ready, 12000,
+        'Service worker tidak aktif selepas 12 saat. Rangkaian mungkin menyekat gstatic.com, atau sw.js gagal dimuatkan.');
+    }catch(e){ return {ok:false, sebab:e.message}; }
+    if(!reg||!reg.active) return {ok:false, sebab:'Service worker tidak aktif. Muat semula halaman dan cuba lagi.'};
 
     const msg=mod.getMessaging(app);
     let token;
@@ -1997,26 +2039,25 @@ async function hidupkanTolak(){
     }catch(e){
       const t=String(e?.message||e);
       if(t.includes('applicationServerKey')||t.includes('InvalidAccessError'))
-        return {ok:false, sebab:'Kunci VAPID tidak sah. Jana semula di Firebase Console dan pastikan ia disalin penuh.'};
+        return {ok:false, sebab:'Kunci VAPID tidak sah. Jana semula di Firebase Console.'};
+      if(t.includes('failed-service-worker-registration'))
+        return {ok:false, sebab:'Service worker tidak dijumpai. Pastikan sw.js diupload ke folder yang sama dengan index.html.'};
       return {ok:false, sebab:'Gagal mendapatkan token: '+t};
     }
-    if(!token) return {ok:false, sebab:'Token kosong. Cuba buang kebenaran notifikasi dalam tetapan pelayar, kemudian cuba semula.'};
+    if(!token) return {ok:false, sebab:'Token kosong. Buang kebenaran notifikasi dalam tetapan pelayar, kemudian cuba semula.'};
 
+    /* Simpan alamat app supaya pelayan boleh bina URL ikon dan
+       pautan yang penuh. Diperlukan kerana app di-hos dalam subfolder. */
+    const asal=location.origin+location.pathname.replace(/[^/]*$/,'');
     await F.setDoc(F.doc(fs,'sekolah',sidKini,'token',kunciToken(token)),{
-      token, emel:emelSaya(), peranan, sid:sidKini, dikemas:F.serverTimestamp()
+      token, emel:emelSaya(), peranan, sid:sidKini, asal,
+      dikemas:F.serverTimestamp()
     });
     localStorage.setItem('ez_token',token);
+
     mod.onMessage(msg,p=>{
       const n=p?.notification||{}, d=p?.data||{};
       window.EZ.toast(n.body||d.body||'Peringatan EZ-HADIR');
-      try{
-        if(Notification.permission==='granted' && reg?.showNotification){
-          reg.showNotification(n.title||d.title||'EZ-HADIR',{
-            body:n.body||d.body||'Peringatan kehadiran.',
-            icon:'icon-192.png', badge:'icon-192.png', tag:d.tag||'ez-hadir'
-          });
-        }
-      }catch{}
     });
     return {ok:true};
   }catch(e){
@@ -2061,6 +2102,42 @@ async function semakTolakSediaAda(){
     if(d.exists()) window.EZ.setPeringatan('awan');
     else localStorage.removeItem('ez_token');
   }catch{}
+}
+
+/* Diagnostik: periksa setiap lapisan satu per satu */
+async function diagnosisTolak(){
+  const d={};
+  d.alamat = location.origin+location.pathname;
+  d.protokol = location.protocol;
+  d.vapid = (CONFIG.VAPID||'').trim() ? 'diisi ('+CONFIG.VAPID.slice(0,12)+'…)' : 'KOSONG';
+  d.izin = ('Notification' in window) ? Notification.permission : 'tidak disokong';
+  d.dipasang = (window.matchMedia('(display-mode: standalone)').matches||navigator.standalone) ? 'ya' : 'tidak';
+  try{
+    const semua=await navigator.serviceWorker.getRegistrations();
+    d.bilanganSW = semua.length;
+    d.senaraiSW = semua.map(r=>{
+      const s=(r.active&&r.active.scriptURL)||'(tiada)';
+      return s.split('/').pop()+' @ '+r.scope.replace(location.origin,'');
+    }).join(' | ') || '(tiada)';
+    let reg=null;
+    try{ reg=await hadMasa(navigator.serviceWorker.ready, 8000, 'SW tidak aktif dalam 8 saat'); }
+    catch(e){ d.swAktif='TIDAK ('+e.message+')'; }
+    if(reg) d.swAktif = reg.active ? 'ya' : 'tidak';
+    const sub=reg ? await reg.pushManager.getSubscription().catch(()=>null) : null;
+    d.langganan = sub ? 'ada' : 'TIADA';
+    if(sub) d.hujung = sub.endpoint.slice(0,58)+'…';
+  }catch(e){ d.swRalat=String(e?.message||e); }
+  d.tokenTempatan = localStorage.getItem('ez_token') ? 'ada' : 'tiada';
+  if(sidKini){
+    try{
+      const t=localStorage.getItem('ez_token');
+      if(t){
+        const doc=await F.getDoc(F.doc(fs,'sekolah',sidKini,'token',kunciToken(t)));
+        d.tokenFirestore = doc.exists() ? 'ada' : 'TIADA';
+      }
+    }catch(e){ d.tokenFirestore='ralat: '+ringkas(e); }
+  }
+  return d;
 }
 
 /* ── rekod kehadiran, laporan & analisis ────────────────────── */
@@ -2173,7 +2250,7 @@ $('btnLaporTg').addEventListener('click',async e=>{
   b.disabled=false;
 });
 
-window.EZfs = Object.assign(window.EZfs||{}, {simpanRekod, muatLaporan, hidupkanTolak, matikanTolak, ujiTolak});
+window.EZfs = Object.assign(window.EZfs||{}, {simpanRekod, muatLaporan, hidupkanTolak, matikanTolak, ujiTolak, diagnosisTolak});
 
 $('btnSimpanJam').addEventListener('click',async e=>{
   const b=e.target; b.disabled=true; b.textContent='Menyimpan…';

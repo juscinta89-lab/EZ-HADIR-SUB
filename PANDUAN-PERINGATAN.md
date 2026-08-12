@@ -19,11 +19,15 @@ VAPID: "BEl3xK...kunci-anda",
 
 ---
 
-## B. Semak fail firebase-messaging-sw.js
+## B. Service worker
 
-Fail ini sudah diisi dengan tetapan projek `ez-hadir-subscribe`. Jika anda tukar projek Firebase nanti, tetapan di dalamnya perlu ditukar sekali.
+Sejak versi v24, hanya ada **satu** service worker: `sw.js`. Ia mengandungi
+cache PWA dan notifikasi sekali. Fail `firebase-messaging-sw.js` sudah
+dipadam — jangan upload lagi, kerana dua service worker pada skop yang
+sama akan berlanggar dan mematikan notifikasi.
 
-Fail mesti berada di **root yang sama** dengan `index.html`. Jangan letak dalam subfolder.
+Tetapan Firebase juga terkandung di dalam `sw.js`. Jika projek Firebase
+ditukar nanti, tetapan di dalamnya perlu ditukar sekali.
 
 ---
 
