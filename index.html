@@ -1059,13 +1059,30 @@ $('btnUjiNotif').addEventListener('click',async()=>{
   tutupSheet('sheetMenu');
   toast('Menghantar notifikasi ujian…');
   const r=await window.EZfs?.ujiTolak?.();
-  if(r?.ok){
-    const n=r.data?.dihantar ?? 0;
-    toast(n? 'Ujian dihantar ke '+n+' peranti. Kunci skrin telefon untuk melihatnya.'
-           : 'Tiada peranti berdaftar untuk akaun ini.', n?'good':'bad');
-  } else {
-    alert('Ujian gagal.\n\n'+(r?.sebab||'Sebab tidak diketahui.'));
+
+  // gagal sebelum sampai ke pelayan
+  if(!r?.ok && !r?.data){
+    return alert('Ujian gagal sebelum sampai ke pelayan.\n\n'+(r?.sebab||'Sebab tidak diketahui.'));
   }
+
+  const d=r.data||{};
+  if(d.dihantar>0){
+    return toast('Ujian dihantar ke '+d.dihantar+' peranti. Kunci skrin telefon untuk melihatnya.','good');
+  }
+
+  // pelayan menjawab tetapi tidak berjaya — papar laporan penuh
+  const baris=[
+    'Ujian tidak berjaya.',
+    '',
+    'Langkah  : '+(d.langkah||'?'),
+    'Emel     : '+(d.emel||'?'),
+    'Sekolah  : '+(d.sid||'?'),
+    d.jumlahToken!=null ? 'Token    : '+d.jumlahToken : null,
+    d.gagal!=null       ? 'Gagal    : '+d.gagal : null,
+    d.kodRalat?.length  ? 'Kod      : '+d.kodRalat.join(', ') : null,
+    d.ralat             ? '\nRalat    : '+d.ralat : null
+  ].filter(Boolean);
+  alert(baris.join('\n'));
 });
 
 /* ── helaian ────────────────────────────────────────────────── */
@@ -1967,7 +1984,8 @@ async function hidupkanTolak(){
 
     let reg;
     try{
-      reg = await navigator.serviceWorker.ready; // Guna Service Worker PWA sedia ada
+      reg=await navigator.serviceWorker.register('firebase-messaging-sw.js',{scope:'./'});
+      await navigator.serviceWorker.ready;
     }catch(e){
       return {ok:false, sebab:'Fail firebase-messaging-sw.js tidak dijumpai di pelayan. Pastikan ia diupload ke folder yang sama dengan index.html.'};
     }
@@ -2014,7 +2032,8 @@ async function ujiTolak(){
     const fn=mod.getFunctions(app,'asia-southeast1');
     const panggil=mod.httpsCallable(fn,'ujiNotifikasi');
     const hasil=await panggil({sid:sidKini});
-    return {ok:true, data:hasil.data};
+    const d=hasil?.data||{};
+    return {ok:!!d.ok, data:d};
   }catch(e){
     const t2=String(e?.message||e);
     if(t2.includes('not-found')||t2.includes('NOT_FOUND'))
@@ -2247,9 +2266,6 @@ $('btnCiptaSekolah').addEventListener('click',async e=>{
 $('btnKeluar').addEventListener('click',async()=>{
   if(!confirm('Log keluar dari '+CONFIG.JENAMA+'?')) return;
   document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
-  if (window.EZfs && window.EZfs.matikanTolak) {
-    await window.EZfs.matikanTolak();
-  }
   await A.signOut(auth);
 });
 
