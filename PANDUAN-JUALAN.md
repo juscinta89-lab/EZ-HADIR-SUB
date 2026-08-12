@@ -54,6 +54,24 @@ Anda tidak perlu menyentuh data mereka lagi.
 
 ---
 
+## B2. Ciri untuk guru dan admin
+
+**Laporan & analisis** (Menu → Laporan & analisis)
+Rekod terkumpul secara automatik setiap kali laporan dihantar ke Telegram.
+- Peratus kehadiran keseluruhan dan mengikut kelas
+- Senarai murid paling kerap tidak hadir
+- Kelas yang belum lapor hari ini
+- Muat turun CSV (boleh dibuka dalam Excel)
+- Hantar ringkasan minggu atau bulan ke Telegram
+
+**Peringatan harian** (Menu → Peringatan harian)
+Notifikasi pada waktu pilihan setiap hari sekolah. Nota: peringatan ini
+berfungsi selagi app masih dalam ingatan telefon. Untuk peringatan yang
+pasti sampai walaupun app ditutup lama, perlukan Firebase Cloud Messaging
+dan pelayan — belum disertakan.
+
+---
+
 ## C. Pembaharuan dan tamat langganan
 
 Panel pemilik → ketuk nama sekolah:

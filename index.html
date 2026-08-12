@@ -396,6 +396,29 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
   width:100%;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink);
   background:var(--kertas);border:1.5px dashed var(--biru);border-radius:12px;padding:12px 13px
 }
+.tab3{flex:1;height:38px;border:0;background:transparent;border-radius:10px;font-weight:600;font-size:13px;color:var(--muted);font-family:inherit;cursor:pointer}
+.tab3.on{background:var(--kad);color:var(--ink);box-shadow:0 1px 3px rgba(14,27,46,.14)}
+
+.ringkas{display:flex;align-items:center;gap:14px;background:var(--kertas);border:1px solid var(--garis);border-radius:14px;padding:14px}
+.ring-besar{flex:none}
+.ring-besar b{
+  font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:38px;line-height:.9;
+  letter-spacing:-.03em;color:var(--hadir);font-variant-numeric:tabular-nums
+}
+.ring-besar small{display:block;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);margin-top:7px}
+.ring-sisi{flex:1;display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+
+.bar-kelas{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--garis)}
+.bar-kelas:last-child{border-bottom:0}
+.bar-kelas .nama{width:104px;flex:none;font-size:12.5px;font-weight:600;line-height:1.2}
+.bar-kelas .jalur{flex:1;display:block;height:9px;border-radius:99px;background:var(--garis);overflow:hidden}
+.bar-kelas .isi{display:block;height:100%;border-radius:99px;background:var(--hadir)}
+.bar-kelas .isi.amaran{background:#E8A13A}
+.bar-kelas .isi.teruk{background:var(--absen)}
+.bar-kelas .angka{width:46px;flex:none;text-align:right;font-family:'JetBrains Mono',monospace;
+  font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+
 .banner{
   flex:none;background:var(--absen);color:#fff;font-size:12.5px;font-weight:600;
   padding:9px 14px;text-align:center;line-height:1.4
@@ -516,6 +539,14 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
     <button class="menu-item" id="btnInstall" hidden>
       <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
       Pasang ke skrin utama
+    </button>
+    <button class="menu-item" id="btnLaporan">
+      <svg viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M7 20v-7M12 20V6M17 20v-10"/></svg>
+      Laporan &amp; analisis <i id="labelRekod"></i>
+    </button>
+    <button class="menu-item" id="btnPeringatan">
+      <svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7z"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
+      Peringatan harian <i id="labelPeringatan">Tutup</i>
     </button>
     <button class="menu-item" id="btnTema2">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2"/></svg>
@@ -652,6 +683,56 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
     <div class="grip"></div>
     <div class="sheet-top"><h2>Pilih sekolah</h2><button class="tutup" data-tutup="sheetSekolah" aria-label="Tutup">✕</button></div>
     <div class="senarai-kecil" id="senaraiSekolahSaya"></div>
+  </div>
+</div>
+
+<!-- ── laporan & analisis ────────────────────────────────── -->
+<div class="sheet" id="sheetLapor">
+  <div class="sheet-in">
+    <div class="grip"></div>
+    <div class="sheet-top"><h2>Laporan &amp; analisis</h2><button class="tutup" data-tutup="sheetLapor" aria-label="Tutup">✕</button></div>
+
+    <div class="tabs">
+      <button class="tab3 on" data-julat="minggu">Minggu ini</button>
+      <button class="tab3" data-julat="bulan">Bulan ini</button>
+      <button class="tab3" data-julat="lepas">Bulan lepas</button>
+    </div>
+
+    <div id="laporMuat" class="kosong">Memuatkan rekod…</div>
+
+    <div id="laporIsi" hidden>
+      <div class="ringkas">
+        <div class="ring-besar">
+          <b id="rPeratus">—</b>
+          <small>Peratus kehadiran</small>
+        </div>
+        <div class="ring-sisi">
+          <span class="pil">Hari direkod <b id="rHari">0</b></span>
+          <span class="pil">Rekod kelas <b id="rRekod">0</b></span>
+          <span class="pil red">Ketidakhadiran <b id="rTak">0</b></span>
+        </div>
+      </div>
+
+      <p class="tajuk-kecil" style="margin-top:20px">Peratus mengikut kelas</p>
+      <div id="rKelas"></div>
+
+      <p class="tajuk-kecil" style="margin-top:22px">Murid paling kerap tidak hadir</p>
+      <div id="rMurid"></div>
+
+      <p class="tajuk-kecil" style="margin-top:22px">Belum lapor hari ini</p>
+      <div id="rBelum"></div>
+
+      <div class="duo" style="margin-top:20px">
+        <button id="btnCsv">
+          <svg viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          Muat turun CSV
+        </button>
+        <button id="btnLaporTg">
+          <svg viewBox="0 0 24 24"><path d="M21.5 3.5 2.8 10.3c-.8.3-.8 1.4 0 1.7l6.4 2.3 2.3 6.4c.3.8 1.4.8 1.7 0z"/></svg>
+          Hantar ringkasan
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1093,6 +1174,129 @@ $('btnKongsiPautan').addEventListener('click',()=>{
   window.open('https://wa.me/?text='+encodeURIComponent(teks),'_blank');
 });
 
+
+/* ── laporan & analisis (paparan) ───────────────────────────── */
+let julatKini='minggu';
+document.querySelectorAll('.tab3').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab3').forEach(x=>x.classList.toggle('on',x===t));
+  julatKini=t.dataset.julat;
+  window.EZfs?.muatLaporan(julatKini);
+}));
+$('btnLaporan').addEventListener('click',()=>{
+  tutupSheet('sheetMenu');
+  bukaSheet('sheetLapor');
+  window.EZfs?.muatLaporan(julatKini);
+});
+
+window.EZ.laporMemuat=function(){
+  $('laporMuat').hidden=false; $('laporIsi').hidden=true;
+  $('laporMuat').textContent='Memuatkan rekod…';
+};
+window.EZ.laporKosong=function(msg){
+  $('laporMuat').hidden=false; $('laporIsi').hidden=true;
+  $('laporMuat').textContent=msg||'Belum ada rekod untuk tempoh ini. Rekod terkumpul setiap kali laporan dihantar.';
+};
+window.EZ.lukisLaporan=function(d){
+  $('laporMuat').hidden=true; $('laporIsi').hidden=false;
+
+  const pk = d.jumlah? Math.round(d.hadir/d.jumlah*1000)/10 : 0;
+  $('rPeratus').textContent=pk.toFixed(1)+'%';
+  $('rPeratus').style.color = pk>=95?'var(--hadir)':pk>=90?'#E8A13A':'var(--absen)';
+  $('rHari').textContent=d.bilHari;
+  $('rRekod').textContent=d.bilRekod;
+  $('rTak').textContent=d.jumlah-d.hadir;
+
+  const bk=$('rKelas'); bk.innerHTML='';
+  if(!d.kelas.length) bk.innerHTML='<div class="kosong">Tiada data kelas.</div>';
+  d.kelas.forEach(k=>{
+    const p=k.jumlah?k.hadir/k.jumlah*100:0;
+    const r=document.createElement('div'); r.className='bar-kelas';
+    r.innerHTML='<span class="nama"></span><span class="jalur"><i class="isi'+
+      (p>=95?'':p>=90?' amaran':' teruk')+'" style="width:'+Math.max(2,p).toFixed(1)+'%"></i></span>'+
+      '<span class="angka">'+p.toFixed(1)+'%</span>';
+    r.querySelector('.nama').textContent=k.nama;
+    bk.appendChild(r);
+  });
+
+  const bm=$('rMurid'); bm.innerHTML='';
+  if(!d.murid.length) bm.innerHTML='<div class="kosong">Tiada ketidakhadiran direkodkan. Baik sekali.</div>';
+  d.murid.slice(0,10).forEach((m,i)=>{
+    const r=document.createElement('div'); r.className='baris';
+    r.innerHTML='<span class="no">'+pad(i+1)+'</span><div><b></b><small></small></div>'+
+      '<span class="tag'+(m.kali>=5?' mati':'')+'">'+m.kali+' hari</span>';
+    r.querySelector('b').textContent=m.nama;
+    r.querySelector('small').textContent=m.kelas;
+    bm.appendChild(r);
+  });
+
+  const bb=$('rBelum'); bb.innerHTML='';
+  if(!d.belum.length) bb.innerHTML='<div class="kosong">Semua kelas sudah lapor hari ini.</div>';
+  d.belum.forEach(nama=>{
+    const r=document.createElement('div'); r.className='baris';
+    r.innerHTML='<div><b></b></div><span class="tag mati">belum</span>';
+    r.querySelector('b').textContent=nama;
+    bb.appendChild(r);
+  });
+};
+window.EZ.ringkasanTeks=function(d,tajuk){
+  let t='RINGKASAN KEHADIRAN\n';
+  t+=tajuk+'\n';
+  t+='======================\n';
+  t+='PERATUS KEHADIRAN : '+(d.jumlah?(d.hadir/d.jumlah*100).toFixed(1):'0.0')+'%\n';
+  t+='HARI DIREKOD      : '+d.bilHari+'\n';
+  t+='KETIDAKHADIRAN    : '+(d.jumlah-d.hadir)+'\n\n';
+  t+='MENGIKUT KELAS\n*****************************\n';
+  d.kelas.forEach(k=>{
+    const p=k.jumlah?(k.hadir/k.jumlah*100).toFixed(1):'0.0';
+    t+=k.nama+' — '+p+'%\n';
+  });
+  if(d.murid.length){
+    t+='\nPALING KERAP TIDAK HADIR\n*****************************\n';
+    d.murid.slice(0,5).forEach((m,i)=>{ t+=(i+1)+'. '+m.nama+' ('+m.kelas+') — '+m.kali+' hari\n'; });
+  }
+  return t;
+};
+
+/* ── peringatan harian ──────────────────────────────────────── */
+let jamPeringatan=null, penandaJam=null;
+function labelPeringatan(){
+  $('labelPeringatan').textContent = jamPeringatan===null?'Tutup':jamPeringatan+':00 pagi';
+}
+function jadualPeringatan(){
+  clearTimeout(penandaJam);
+  if(jamPeringatan===null) return;
+  const kini=new Date(), sasar=new Date();
+  sasar.setHours(jamPeringatan,0,0,0);
+  if(sasar<=kini) sasar.setDate(sasar.getDate()+1);
+  penandaJam=setTimeout(()=>{
+    const h=new Date().getDay();
+    if(h!==0&&h!==6){   // langkau hujung minggu
+      try{
+        new Notification('EZ-HADIR', {
+          body:'Masa untuk merekod kehadiran kelas hari ini.',
+          icon:'icon-192.png', tag:'ez-hadir-harian'
+        });
+      }catch{}
+    }
+    jadualPeringatan();
+  }, sasar-kini);
+}
+$('btnPeringatan').addEventListener('click',async()=>{
+  if(jamPeringatan!==null){
+    jamPeringatan=null; labelPeringatan(); jadualPeringatan();
+    return toast('Peringatan dimatikan.');
+  }
+  if(!('Notification' in window)) return toast('Peranti ini tidak menyokong notifikasi.','bad');
+  let izin=Notification.permission;
+  if(izin!=='granted') izin=await Notification.requestPermission();
+  if(izin!=='granted') return toast('Kebenaran notifikasi ditolak. Buka tetapan pelayar untuk membenarkannya.','bad');
+  const jam=parseInt(prompt('Ingatkan saya pada pukul berapa pagi? (7 hingga 11)','8'),10);
+  if(!(jam>=6&&jam<=12)) return toast('Masukkan nombor antara 6 dan 12.','bad');
+  jamPeringatan=jam; labelPeringatan(); jadualPeringatan();
+  toast('Peringatan setiap hari sekolah pada '+jam+':00 pagi.','good');
+});
+labelPeringatan();
+
 /* ── telegram ───────────────────────────────────────────────── */
 async function tg(method,body,tokenPaksa){
   const token=(tokenPaksa||TG.botToken||'').trim();
@@ -1127,9 +1331,25 @@ $('btnSend').addEventListener('click',async()=>{
     getar([12,60,12]);
     tutupSheet('sheetMsg');
     toast('Laporan dihantar ke Telegram.','good');
+    const k=kira();
+    window.EZfs?.simpanRekod({
+      tarikh:$('tarikh').value, kelas:kelasKini,
+      jumlah:k.jumlah, hadir:k.hadir,
+      lelakiHadir:k.lh, lelakiJumlah:k.lj,
+      perempuanHadir:k.ph, perempuanJumlah:k.pj,
+      tidakHadir:k.list.filter((_,i)=>absen.has(i)).map(m=>m.n)
+    });
   }catch(err){ toast(err.message,'bad'); }
   b.disabled=false; b.innerHTML=asal;
 });
+
+window.EZ.hantarTeks=async function(teks){
+  if(LUPUT) throw new Error('Langganan sekolah ini telah tamat.');
+  if(!TG.chatId) throw new Error('Chat ID belum ditetapkan oleh admin.');
+  await tg('sendMessage', TG.mono
+    ? {chat_id:TG.chatId,text:'<pre>'+teks.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre>',parse_mode:'HTML'}
+    : {chat_id:TG.chatId,text:teks});
+};
 
 async function salin(teks){
   try{ await navigator.clipboard.writeText(teks); }
@@ -1570,6 +1790,118 @@ $('btnSimpanKelas').addEventListener('click',async e=>{
   }catch(e2){ window.EZ.toast('Gagal simpan: '+ringkas(e2),'bad'); }
   b.disabled=false; b.textContent='Simpan semua kelas ke Firebase';
 });
+
+
+/* ── rekod kehadiran, laporan & analisis ────────────────────── */
+const idRekod=(tarikh,kelas)=>tarikh+'_'+slug(kelas);
+
+async function simpanRekod(r){
+  if(!sidKini||!r?.tarikh||!r?.kelas) return;
+  try{
+    await F.setDoc(F.doc(fs,'sekolah',sidKini,'rekod',idRekod(r.tarikh,r.kelas)),{
+      ...r, sid:sidKini, oleh:emelSaya(), masa:F.serverTimestamp()
+    });
+  }catch(e){
+    window.EZ.toast('Laporan dihantar, tetapi rekod tidak dapat disimpan: '+ringkas(e),'bad');
+  }
+}
+
+function julatTarikh(jenis){
+  const kini=new Date(), p=n=>String(n).padStart(2,'0');
+  const teks=d=>d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+  if(jenis==='minggu'){
+    const isnin=new Date(kini);
+    isnin.setDate(kini.getDate()-((kini.getDay()+6)%7));
+    return {dari:teks(isnin), hingga:teks(kini), tajuk:'Minggu '+p(isnin.getDate())+'/'+p(isnin.getMonth()+1)+' hingga '+p(kini.getDate())+'/'+p(kini.getMonth()+1)+'/'+kini.getFullYear()};
+  }
+  if(jenis==='lepas'){
+    const a=new Date(kini.getFullYear(),kini.getMonth()-1,1);
+    const b=new Date(kini.getFullYear(),kini.getMonth(),0);
+    return {dari:teks(a), hingga:teks(b), tajuk:BULAN[a.getMonth()]+' '+a.getFullYear()};
+  }
+  const a=new Date(kini.getFullYear(),kini.getMonth(),1);
+  return {dari:teks(a), hingga:teks(kini), tajuk:BULAN[a.getMonth()]+' '+a.getFullYear()};
+}
+const BULAN=['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
+
+let laporanKini=null, tajukKini='';
+
+async function muatLaporan(jenis){
+  if(!sidKini) return window.EZ.laporKosong('Pilih sekolah dahulu.');
+  window.EZ.laporMemuat();
+  const j=julatTarikh(jenis); tajukKini=j.tajuk;
+  try{
+    const q=F.query(F.collection(fs,'sekolah',sidKini,'rekod'),
+      F.where('tarikh','>=',j.dari), F.where('tarikh','<=',j.hingga));
+    const snap=await F.getDocs(q);
+    if(!snap.size){ laporanKini=null; return window.EZ.laporKosong(); }
+
+    let hadir=0, jumlah=0;
+    const hari=new Set(), perKelas={}, perMurid={}, rekod=[];
+    snap.forEach(d=>{
+      const v=d.data();
+      rekod.push(v);
+      hari.add(v.tarikh);
+      hadir+=v.hadir||0; jumlah+=v.jumlah||0;
+      const k=perKelas[v.kelas]=perKelas[v.kelas]||{nama:v.kelas,hadir:0,jumlah:0};
+      k.hadir+=v.hadir||0; k.jumlah+=v.jumlah||0;
+      (v.tidakHadir||[]).forEach(n=>{
+        const kunci=n+'|'+v.kelas;
+        perMurid[kunci]=perMurid[kunci]||{nama:n,kelas:v.kelas,kali:0};
+        perMurid[kunci].kali++;
+      });
+    });
+
+    // kelas yang belum lapor hari ini
+    const p=n=>String(n).padStart(2,'0');
+    const kini=new Date();
+    const hariIni=kini.getFullYear()+'-'+p(kini.getMonth()+1)+'-'+p(kini.getDate());
+    const sudah=new Set(rekod.filter(v=>v.tarikh===hariIni).map(v=>v.kelas));
+    const semua=Object.keys(window.EZ.ambilDB());
+    const belum=(kini.getDay()===0||kini.getDay()===6)?[]:semua.filter(k=>!sudah.has(k));
+
+    laporanKini={
+      hadir, jumlah, bilHari:hari.size, bilRekod:rekod.length, rekod,
+      kelas:Object.values(perKelas).sort((a,b)=>a.nama.localeCompare(b.nama,'ms',{numeric:true})),
+      murid:Object.values(perMurid).sort((a,b)=>b.kali-a.kali),
+      belum
+    };
+    window.EZ.lukisLaporan(laporanKini);
+  }catch(e){
+    window.EZ.laporKosong('Gagal muat rekod: '+ringkas(e));
+  }
+}
+
+$('btnCsv').addEventListener('click',()=>{
+  if(!laporanKini) return;
+  const lajur=['Tarikh','Kelas','Bil Murid','Hadir','Peratus','Lelaki Hadir','Lelaki Jumlah','Perempuan Hadir','Perempuan Jumlah','Murid Tidak Hadir'];
+  const petik=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  const baris=laporanKini.rekod
+    .sort((a,b)=>a.tarikh.localeCompare(b.tarikh)||a.kelas.localeCompare(b.kelas))
+    .map(v=>[v.tarikh,v.kelas,v.jumlah,v.hadir,
+      v.jumlah?(v.hadir/v.jumlah*100).toFixed(1)+'%':'',
+      v.lelakiHadir,v.lelakiJumlah,v.perempuanHadir,v.perempuanJumlah,
+      (v.tidakHadir||[]).join('; ')].map(petik).join(','));
+  const csv='\uFEFF'+[lajur.map(petik).join(','),...baris].join('\r\n');
+  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  const a=document.createElement('a');
+  a.href=url; a.download='kehadiran-'+sidKini+'-'+tajukKini.replace(/[^A-Za-z0-9]+/g,'-').toLowerCase()+'.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  window.EZ.toast('Fail CSV dimuat turun.','good');
+});
+
+$('btnLaporTg').addEventListener('click',async e=>{
+  if(!laporanKini) return;
+  const b=e.target; b.disabled=true;
+  try{
+    await window.EZ.hantarTeks(window.EZ.ringkasanTeks(laporanKini,tajukKini));
+    window.EZ.toast('Ringkasan dihantar ke Telegram.','good');
+  }catch(e2){ window.EZ.toast(e2.message,'bad'); }
+  b.disabled=false;
+});
+
+window.EZfs = Object.assign(window.EZfs||{}, {simpanRekod, muatLaporan});
 
 /* ── panel pemilik ──────────────────────────────────────────── */
 async function senaraiSemuaSekolah(){

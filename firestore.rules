@@ -121,6 +121,17 @@ service cloud.firestore {
         allow delete: if pemilik() || adminSekolah(sid);
       }
 
+      match /rekod/{rekodId} {
+        // guru boleh baca dan tulis rekod kehadiran sekolahnya
+        allow read:   if pemilik() || (ahli(sid) && sekolahHidup(sid));
+        allow create, update: if (pemilik() || (ahli(sid) && sekolahHidup(sid)))
+                      && request.resource.data.kelas is string
+                      && request.resource.data.tarikh is string
+                      && request.resource.data.jumlah is int
+                      && request.resource.data.hadir is int;
+        allow delete: if pemilik() || adminSekolah(sid);
+      }
+
       match /tetapan/{docId} {
         allow read:  if pemilik() || (ahli(sid) && sekolahHidup(sid));
         allow write: if pemilik() || (adminSekolah(sid) && sekolahHidup(sid));

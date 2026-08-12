@@ -1,7 +1,7 @@
 /* Lapor Kehadiran — service worker
    Naikkan nombor VERSI setiap kali fail index.html dikemas kini,
    supaya telefon guru memuat turun versi baharu.                     */
-const VERSI = 'ezhadir-v13';
+const VERSI = 'ezhadir-v14';
 
 const SHELL = [
   './',
