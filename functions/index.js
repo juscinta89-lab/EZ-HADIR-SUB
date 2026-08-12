@@ -59,9 +59,15 @@ async function hantar(sid, tokenDocs, title, body, tag) {
     const kumpulan = tokenDocs.slice(i, i + 500);
     const res = await admin.messaging().sendEachForMulticast({
       tokens: kumpulan.map(d => d.data().token),
-      data: { title, body, tag, url: `./?s=${sid}` },
+      data: { tag, url: `./?s=${sid}` },
       webpush: {
         headers: { Urgency: 'normal', TTL: '10800' },
+        notification: {
+          title, body,
+          icon: 'icon-192.png',
+          badge: 'icon-192.png',
+          tag
+        },
         fcmOptions: { link: `./?s=${sid}` }
       }
     });
@@ -137,14 +143,19 @@ exports.ujiNotifikasi = onCall(async (req) => {
     laporan.langkah = 'hantar FCM';
     const res = await admin.messaging().sendEachForMulticast({
       tokens: snap.docs.map(d => d.data().token),
-      data: {
-        title: 'EZ-HADIR',
-        body: 'Notifikasi ujian berjaya. Peringatan harian anda sudah berfungsi.',
-        tag: 'ez-uji',
-        url: `./?s=${sid}`
-      },
+      data: { tag: 'ez-uji', url: `./?s=${sid}` },
       webpush: {
         headers: { Urgency: 'high', TTL: '3600' },
+        // blok notification menyebabkan pelayar memaparkannya sendiri,
+        // tanpa bergantung pada kod dalam service worker
+        notification: {
+          title: 'EZ-HADIR',
+          body: 'Notifikasi ujian berjaya. Peringatan harian anda sudah berfungsi.',
+          icon: 'icon-192.png',
+          badge: 'icon-192.png',
+          tag: 'ez-uji',
+          requireInteraction: false
+        },
         fcmOptions: { link: `./?s=${sid}` }
       }
     });

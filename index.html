@@ -1984,8 +1984,8 @@ async function hidupkanTolak(){
 
     let reg;
     try{
-      reg=await navigator.serviceWorker.register('firebase-messaging-sw.js',{scope:'./'});
-      await navigator.serviceWorker.ready;
+      reg=await navigator.serviceWorker.register('firebase-messaging-sw.js',{scope:'./fcm/'});
+      await reg.update().catch(()=>{});
     }catch(e){
       return {ok:false, sebab:'Fail firebase-messaging-sw.js tidak dijumpai di pelayan. Pastikan ia diupload ke folder yang sama dengan index.html.'};
     }
@@ -2007,8 +2007,16 @@ async function hidupkanTolak(){
     });
     localStorage.setItem('ez_token',token);
     mod.onMessage(msg,p=>{
-      const d=p?.data||p?.notification||{};
-      window.EZ.toast(d.body||'Peringatan EZ-HADIR');
+      const n=p?.notification||{}, d=p?.data||{};
+      window.EZ.toast(n.body||d.body||'Peringatan EZ-HADIR');
+      try{
+        if(Notification.permission==='granted' && reg?.showNotification){
+          reg.showNotification(n.title||d.title||'EZ-HADIR',{
+            body:n.body||d.body||'Peringatan kehadiran.',
+            icon:'icon-192.png', badge:'icon-192.png', tag:d.tag||'ez-hadir'
+          });
+        }
+      }catch{}
     });
     return {ok:true};
   }catch(e){
