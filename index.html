@@ -1999,6 +1999,13 @@ async function hidupkanTolak(){
   }
 }
 
+async function matikanTolak(){
+  const t=localStorage.getItem('ez_token');
+  localStorage.removeItem('ez_token');
+  if(!t||!sidKini) return;
+  try{ await F.deleteDoc(F.doc(fs,'sekolah',sidKini,'token',kunciToken(t))); }catch{}
+}
+
 /* Ujian hujung ke hujung melalui Cloud Functions */
 async function ujiTolak(){
   const t=localStorage.getItem('ez_token');
