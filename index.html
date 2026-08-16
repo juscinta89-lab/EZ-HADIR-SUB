@@ -101,7 +101,12 @@ button{font-family:inherit;cursor:pointer;color:inherit}
 
 /* ── rangka: hanya senarai murid yang menatal ──────────────── */
 .app{
-  height:100%;height:100dvh;
+  /* --app-h diukur oleh JavaScript daripada tinggi skrin sebenar.
+     100dvh tidak boleh dipercayai pada Android kerana ia kadang
+     merangkumi kawasan di bawah bar navigasi gerak isyarat,
+     menyebabkan bar butang tertolak keluar skrin. */
+  height:var(--app-h,100%);
+  max-height:var(--app-h,100%);
   display:flex;flex-direction:column;overflow:hidden;
   position:relative
 }
@@ -1050,6 +1055,20 @@ $('btnReset').addEventListener('click',()=>{
 });
 
 
+
+/* ── ukur tinggi skrin sebenar ───────────────────────────────── */
+(function ukurTinggi(){
+  const set=()=>{
+    const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    document.documentElement.style.setProperty('--app-h', Math.round(h)+'px');
+  };
+  set();
+  addEventListener('resize', set);
+  addEventListener('orientationchange', ()=>setTimeout(set,300));
+  if(window.visualViewport) window.visualViewport.addEventListener('resize', set);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) setTimeout(set,60); });
+  setTimeout(set,400);   // selepas bar pelayar mengecil
+})();
 
 /* ── kunci paparan: halang zoom yang merosakkan susun atur ──── */
 (function kunciPaparan(){
