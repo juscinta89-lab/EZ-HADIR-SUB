@@ -264,6 +264,15 @@ tarikh tamat. Tamat = akses data disekat oleh rules, data kekal.
 **Laporan:** Menu → Laporan & analisis. Semua orang boleh lihat dan
 muat turun CSV; hanya admin boleh Hantar ringkasan ke Telegram.
 
+**Satu butang dua kerja:** butang **Hantar ke Telegram** menyimpan rekod
+kehadiran untuk laporan harian DAN menghantar mesej ke Telegram sekali
+gus. Rekod disimpan dahulu, jadi laporan tetap tepat walaupun Telegram
+gagal (token salah, tiada talian). Toast akan menyatakan yang mana
+berjaya:
+- "Dihantar ke Telegram dan direkod dalam laporan." — kedua-duanya OK
+- "Kehadiran direkod. Telegram gagal: …" — laporan selamat, semak tetapan Telegram
+- "Dihantar ke Telegram, tetapi rekod laporan gagal disimpan." — semak firestore.rules
+
 **Setiap kali kemas kini fail app:** naikkan `VERSI` dalam `sw.js`
 (`ezhadir-v25` → `v26`), jika tidak telefon guru kekal pada versi lama.
 

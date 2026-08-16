@@ -2,7 +2,7 @@
 <html lang="ms">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#0E1B2E" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0A1422" media="(prefers-color-scheme: dark)">
@@ -81,21 +81,35 @@ const CONFIG = window.CONFIG;
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html{-webkit-text-size-adjust:100%;height:100%}
+html,body{
+  height:100%;overflow:hidden;
+  position:fixed;inset:0;width:100%;
+  overscroll-behavior:none
+}
 body{
   margin:0;font-family:'Instrument Sans',system-ui,-apple-system,sans-serif;
   font-size:16px;line-height:1.45;color:var(--ink);background:var(--kertas);
-  height:100vh;height:100dvh;overflow:hidden;
-  overscroll-behavior:none;touch-action:manipulation
+  touch-action:pan-y;
+  -webkit-text-size-adjust:100%;text-size-adjust:100%;
+  -webkit-user-select:none;user-select:none
 }
+/* medan input kekal boleh pilih teks */
+input,textarea,select,pre,.bubble{-webkit-user-select:text;user-select:text}
 button{font-family:inherit;cursor:pointer;color:inherit}
 :focus-visible{outline:2.5px solid var(--biru);outline-offset:2px;border-radius:8px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 /* ── rangka: hanya senarai murid yang menatal ──────────────── */
-.app{height:100%;display:flex;flex-direction:column;overflow:hidden}
-.tetap{flex:none;background:var(--kertas)}
+.app{
+  height:100%;height:100dvh;
+  display:flex;flex-direction:column;overflow:hidden;
+  position:relative
+}
+.tetap{position:relative;z-index:2}
+.tetap{flex:none;background:var(--kertas);flex-shrink:0}
 .skrol{
   flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  touch-action:pan-y;
   -webkit-overflow-scrolling:touch;padding:0 14px 14px;
   -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 10px);
           mask-image:linear-gradient(to bottom,transparent 0,#000 10px)
@@ -215,7 +229,8 @@ select:focus,input:focus,textarea:focus{border-color:var(--biru);outline:none}
 
 /* ── bar tindakan bawah ────────────────────────────────────── */
 .bar{
-  flex:none;background:var(--kad);border-top:1px solid var(--garis);
+  flex:none;flex-shrink:0;position:relative;z-index:2;
+  background:var(--kad);border-top:1px solid var(--garis);
   padding:9px 14px calc(env(safe-area-inset-bottom) + 9px)
 }
 .bar-in{max-width:560px;margin:0 auto;display:flex;gap:8px}
@@ -1035,6 +1050,34 @@ $('btnReset').addEventListener('click',()=>{
 });
 
 
+
+/* ── kunci paparan: halang zoom yang merosakkan susun atur ──── */
+(function kunciPaparan(){
+  // cubit dua jari
+  document.addEventListener('gesturestart', e=>e.preventDefault(), {passive:false});
+  document.addEventListener('gesturechange', e=>e.preventDefault(), {passive:false});
+  document.addEventListener('gestureend', e=>e.preventDefault(), {passive:false});
+  document.addEventListener('touchmove', e=>{ if(e.touches.length>1) e.preventDefault(); }, {passive:false});
+
+  // ketuk dua kali
+  let ketukAkhir=0;
+  document.addEventListener('touchend', e=>{
+    const kini=Date.now();
+    if(kini-ketukAkhir<320){
+      const t=e.target;
+      if(!t.closest('input,textarea,select')) e.preventDefault();
+    }
+    ketukAkhir=kini;
+  }, {passive:false});
+
+  // jika pelayar masih membenarkan zoom, pulihkan kedudukan
+  const pulih=()=>{ window.scrollTo(0,0); document.body.scrollTop=0; };
+  window.addEventListener('orientationchange', ()=>setTimeout(pulih,250));
+  window.addEventListener('resize', pulih);
+  window.addEventListener('scroll', pulih, {passive:true});
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) pulih(); });
+})();
+
 /* ── tema paparan: ikut telefon / cerah / gelap ─────────────── */
 const TEMA=['','cerah','gelap'];
 const LABEL={'':'Ikut telefon','cerah':'Cerah','gelap':'Gelap'};
@@ -1485,28 +1528,56 @@ $('btnTest').addEventListener('click',async e=>{
 });
 $('btnSend').addEventListener('click',async()=>{
   if(LUPUT) return toast('Langganan sekolah ini telah tamat.','bad');
-  if(!TG.chatId) return toast('Chat ID belum ditetapkan oleh admin.','bad');
   if(!kira().jumlah) return toast('Tiada murid dalam kelas ini.','bad');
   const b=$('btnSend'), asal=b.innerHTML;
   b.disabled=true; b.textContent='Menghantar…';
-  const teks=buildMsg();
+
+  const k=kira();
+  const rekod={
+    tarikh:$('tarikh').value, kelas:kelasKini,
+    jumlah:k.jumlah, hadir:k.hadir,
+    lelakiHadir:k.lh, lelakiJumlah:k.lj,
+    perempuanHadir:k.ph, perempuanJumlah:k.pj,
+    tidakHadir:k.list.filter((_,i)=>absen.has(i)).map(m=>m.n)
+  };
+
+  /* Rekod disimpan DAHULU supaya laporan harian sentiasa tepat,
+     walaupun Telegram gagal (contohnya token salah atau tiada talian). */
+  let simpanOk=false;
   try{
-    await tg('sendMessage', TG.mono
-      ? {chat_id:TG.chatId,text:'<pre>'+teks.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre>',parse_mode:'HTML'}
-      : {chat_id:TG.chatId,text:teks});
+    simpanOk = await window.EZfs?.simpanRekod(rekod) !== false;
+  }catch{ simpanOk=false; }
+
+  let tgOk=false, tgRalat='';
+  if(TG.chatId){
+    const teks=buildMsg();
+    try{
+      await tg('sendMessage', TG.mono
+        ? {chat_id:TG.chatId,text:'<pre>'+teks.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre>',parse_mode:'HTML'}
+        : {chat_id:TG.chatId,text:teks});
+      tgOk=true;
+    }catch(err){ tgRalat=err.message||'gagal'; }
+  } else {
+    tgRalat='Chat ID belum ditetapkan oleh admin.';
+  }
+
+  b.disabled=false; b.innerHTML=asal;
+
+  if(tgOk && simpanOk){
     getar([12,60,12]);
     tutupSheet('sheetMsg');
-    toast('Laporan dihantar ke Telegram.','good');
-    const k=kira();
-    window.EZfs?.simpanRekod({
-      tarikh:$('tarikh').value, kelas:kelasKini,
-      jumlah:k.jumlah, hadir:k.hadir,
-      lelakiHadir:k.lh, lelakiJumlah:k.lj,
-      perempuanHadir:k.ph, perempuanJumlah:k.pj,
-      tidakHadir:k.list.filter((_,i)=>absen.has(i)).map(m=>m.n)
-    });
-  }catch(err){ toast(err.message,'bad'); }
-  b.disabled=false; b.innerHTML=asal;
+    toast('Dihantar ke Telegram dan direkod dalam laporan.','good');
+  } else if(simpanOk && !tgOk){
+    getar(20);
+    tutupSheet('sheetMsg');
+    toast('Kehadiran direkod. Telegram gagal: '+tgRalat,'bad');
+  } else if(tgOk && !simpanOk){
+    getar(20);
+    tutupSheet('sheetMsg');
+    toast('Dihantar ke Telegram, tetapi rekod laporan gagal disimpan.','bad');
+  } else {
+    toast('Gagal: '+tgRalat,'bad');
+  }
 });
 
 window.EZ.adaKuasaAdmin=()=>PERANAN==='admin'||PERANAN==='pemilik';
@@ -2144,13 +2215,15 @@ async function diagnosisTolak(){
 const idRekod=(tarikh,kelas)=>tarikh+'_'+slug(kelas);
 
 async function simpanRekod(r){
-  if(!sidKini||!r?.tarikh||!r?.kelas) return;
+  if(!sidKini||!r?.tarikh||!r?.kelas) return false;
   try{
     await F.setDoc(F.doc(fs,'sekolah',sidKini,'rekod',idRekod(r.tarikh,r.kelas)),{
       ...r, sid:sidKini, oleh:emelSaya(), masa:F.serverTimestamp()
     });
+    return true;
   }catch(e){
-    window.EZ.toast('Laporan dihantar, tetapi rekod tidak dapat disimpan: '+ringkas(e),'bad');
+    console.warn('Rekod gagal disimpan:', e);
+    return false;
   }
 }
 
