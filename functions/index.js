@@ -201,22 +201,32 @@ exports.ujiNotifikasi = onCall(async (req) => {
 
 /* ── satu jadual, bangun setiap jam 6 pagi hingga 1 petang ──── */
 exports.peringatanHarian = onSchedule(
-  { schedule: '30 6-13 * * 1-5', timeZone: ZON },
+  /* Berjalan SETIAP hari. Hari sekolah berbeza mengikut negeri
+     (Kelantan, Terengganu, Johor, Kedah = Ahad hingga Khamis),
+     jadi penapisan dibuat per sekolah di dalam kod, bukan di sini. */
+  { schedule: '30 6-13 * * *', timeZone: ZON },
   async () => {
-    const jam = kiniMY().getHours();
-    console.log(`Semakan pada jam ${jam}:30 waktu Malaysia`);
+    const kini = kiniMY();
+    const jam = kini.getHours();
+    const hari = kini.getDay();
+    console.log(`Semakan pada jam ${jam}:30, hari ${hari} (0=Ahad)`);
 
     for (const sekolah of await sekolahAktif()) {
       const sid = sekolah.id;
       const rujuk = db.collection('sekolah').doc(sid);
 
-      let t = { jamPagi: 7, jamSemak: 10, aktif: true };
+      let t = { jamPagi: 7, jamSemak: 10, aktif: true, hariSekolah: [1, 2, 3, 4, 5] };
       try {
         const d = await rujuk.collection('tetapan').doc('peringatan').get();
         if (d.exists) t = { ...t, ...d.data() };
       } catch (e) { /* guna nilai lalai */ }
 
       if (t.aktif === false) continue;
+
+      const hariSekolah = Array.isArray(t.hariSekolah) && t.hariSekolah.length
+        ? t.hariSekolah.map(Number)
+        : [1, 2, 3, 4, 5];
+      if (!hariSekolah.includes(hari)) continue;   // bukan hari sekolah
 
       try {
         if (jam === Number(t.jamPagi))  await ingatanGuru(rujuk, sid);

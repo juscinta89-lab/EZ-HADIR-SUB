@@ -10,7 +10,7 @@
 
    Naikkan VERSI setiap kali fail app dikemas kini.
    ══════════════════════════════════════════════════════════════ */
-const VERSI = 'ezhadir-v27';
+const VERSI = 'ezhadir-v28';
 
 /* ── bahagian notifikasi ────────────────────────────────────── */
 /* Dibungkus dalam try/catch: jika rangkaian menyekat gstatic.com,

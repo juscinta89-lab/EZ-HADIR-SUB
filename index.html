@@ -665,6 +665,17 @@ textarea{font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;m
           </div>
         </div>
       </div>
+      <div class="field">
+        <label for="hariSekolah">Minggu persekolahan</label>
+        <div class="sel">
+          <select id="hariSekolah">
+            <option value="1,2,3,4,5">Isnin – Jumaat</option>
+            <option value="0,1,2,3,4">Ahad – Khamis (Kelantan, Terengganu, Johor, Kedah)</option>
+            <option value="0,1,2,3,4,5,6">Setiap hari</option>
+          </select>
+          <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+      </div>
       <label class="check"><input type="checkbox" id="peringatanAktif" checked> Hidupkan peringatan untuk sekolah ini</label>
       <button class="utama" id="btnSimpanJam">Simpan waktu peringatan</button>
       <p class="hint">Waktu Malaysia, Isnin hingga Jumaat sahaja. Ingatan guru dihantar kepada semua guru; semakan admin menyenaraikan kelas yang belum lapor.</p>
@@ -1432,8 +1443,7 @@ function jadualTempatan(){
   sasar.setHours(jamTempatan,0,0,0);
   if(sasar<=kini) sasar.setDate(sasar.getDate()+1);
   penandaJam=setTimeout(()=>{
-    const h=new Date().getDay();
-    if(h!==0&&h!==6){
+    if(window.EZ.adalahHariSekolah(new Date())){
       try{ new Notification('EZ-HADIR',{
         body:'Masa untuk merekod kehadiran kelas hari ini.',
         icon:'icon-192.png', tag:'ez-hadir-harian' }); }catch{}
@@ -1467,16 +1477,23 @@ $('btnPeringatan').addEventListener('click',async()=>{
     s.value=lalai;
   });
 })();
+let HARI_SEKOLAH=null;   // null = belum ditetapkan, anggap semua hari
 window.EZ.muatJam=function(t){
   $('jamPagi').value  = t?.jamPagi  ?? 7;
   $('jamSemak').value = t?.jamSemak ?? 10;
   $('peringatanAktif').checked = t?.aktif !== false;
+  HARI_SEKOLAH = Array.isArray(t?.hariSekolah) && t.hariSekolah.length ? t.hariSekolah : null;
+  $('hariSekolah').value = (HARI_SEKOLAH || [1,2,3,4,5]).join(',');
 };
 window.EZ.ambilJam=()=>({
   jamPagi:  parseInt($('jamPagi').value,10),
   jamSemak: parseInt($('jamSemak').value,10),
+  hariSekolah: $('hariSekolah').value.split(',').map(Number),
   aktif:    $('peringatanAktif').checked
 });
+/* null bermakna belum ditetapkan — jangan sembunyikan apa-apa */
+window.EZ.hariSekolah = ()=>HARI_SEKOLAH;
+window.EZ.adalahHariSekolah = d => !HARI_SEKOLAH || HARI_SEKOLAH.includes(d.getDay());
     return toast('Peringatan dimatikan.');
   }
   if(!await mintaIzin()) return;
@@ -1514,16 +1531,23 @@ window.EZ.setPeringatan('tutup');
     s.value=lalai;
   });
 })();
+let HARI_SEKOLAH=null;   // null = belum ditetapkan, anggap semua hari
 window.EZ.muatJam=function(t){
   $('jamPagi').value  = t?.jamPagi  ?? 7;
   $('jamSemak').value = t?.jamSemak ?? 10;
   $('peringatanAktif').checked = t?.aktif !== false;
+  HARI_SEKOLAH = Array.isArray(t?.hariSekolah) && t.hariSekolah.length ? t.hariSekolah : null;
+  $('hariSekolah').value = (HARI_SEKOLAH || [1,2,3,4,5]).join(',');
 };
 window.EZ.ambilJam=()=>({
   jamPagi:  parseInt($('jamPagi').value,10),
   jamSemak: parseInt($('jamSemak').value,10),
+  hariSekolah: $('hariSekolah').value.split(',').map(Number),
   aktif:    $('peringatanAktif').checked
 });
+/* null bermakna belum ditetapkan — jangan sembunyikan apa-apa */
+window.EZ.hariSekolah = ()=>HARI_SEKOLAH;
+window.EZ.adalahHariSekolah = d => !HARI_SEKOLAH || HARI_SEKOLAH.includes(d.getDay());
 
 /* ── telegram ───────────────────────────────────────────────── */
 async function tg(method,body,tokenPaksa){
@@ -2298,7 +2322,13 @@ async function muatLaporan(jenis){
     const hariIni=kini.getFullYear()+'-'+p(kini.getMonth()+1)+'-'+p(kini.getDate());
     const sudah=new Set(rekod.filter(v=>v.tarikh===hariIni).map(v=>v.kelas));
     const semua=Object.keys(window.EZ.ambilDB());
-    const belum=(kini.getDay()===0||kini.getDay()===6)?[]:semua.filter(k=>!sudah.has(k));
+    /* Hari sekolah berbeza mengikut negeri. Kelantan, Terengganu,
+       Johor dan Kedah bersekolah Ahad hingga Khamis. Jika admin
+       belum menetapkannya, kita tunjukkan senarai pada semua hari
+       dan biarkan pengguna menilai sendiri. */
+    const belum = window.EZ.adalahHariSekolah(kini)
+      ? semua.filter(k=>!sudah.has(k))
+      : [];
 
     laporanKini={
       hadir, jumlah, bilHari:hari.size, bilRekod:rekod.length, rekod,

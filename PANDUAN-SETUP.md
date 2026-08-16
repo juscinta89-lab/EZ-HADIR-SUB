@@ -249,7 +249,14 @@ app yang dipasang dikecualikan.
 Menu → Tetapan admin → Telegram → Waktu peringatan.
 Ingatan guru (lalai 7:30 pagi, semua guru) dan Semakan admin
 (lalai 10:30 pagi, senarai kelas belum lapor kepada admin sahaja).
-Isnin–Jumaat sahaja.
+
+**Minggu persekolahan** — di ruangan yang sama. WAJIB ditetapkan:
+- **Ahad – Khamis** untuk Kelantan, Terengganu, Johor, Kedah
+- **Isnin – Jumaat** untuk negeri lain
+
+Tetapan ini menentukan hari mana notifikasi dihantar, dan hari mana
+senarai "Belum lapor hari ini" dipaparkan dalam Laporan. Jika belum
+ditetapkan, senarai belum lapor akan dipaparkan pada semua hari.
 
 **Tambah guru:** Tetapan admin → Guru → Buat pautan jemputan → WhatsApp.
 Guru buka pautan, log masuk, terus berdaftar. Pautan sah 30 hari, boleh
